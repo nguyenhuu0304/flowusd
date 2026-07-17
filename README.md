@@ -1,36 +1,180 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FlowUSD
 
-## Getting Started
+> Open-source USDC payment experience built for Arc.
 
-First, run the development server:
+FlowUSD is an open-source application that demonstrates how to build modern stablecoin payment experiences on the Arc network.
+
+The project focuses on simplicity, developer experience, and real-world payment flows powered by native USDC.
+
+---
+
+## ✨ Vision
+
+FlowUSD aims to make stablecoin payments feel as simple as using a modern fintech application.
+
+Instead of building another wallet, FlowUSD focuses on practical payment experiences such as:
+
+- Send USDC
+- Receive payments
+- Payment Links
+- QR Payments
+- Transaction Memo
+- Merchant Dashboard
+
+Built for developers, creators, and businesses.
+
+---
+
+## 🚀 Features
+
+Current:
+
+- Modern Landing Page
+- Responsive UI
+- Open-source architecture
+
+Planned:
+
+- Arc Wallet Connection
+- Native USDC Transfers
+- Payment Requests
+- Payment Links
+- QR Code Payments
+- Transaction History
+- Dashboard
+- Merchant Tools
+
+---
+
+## 🛠 Tech Stack
+
+- Next.js 16
+- TypeScript
+- Tailwind CSS v4
+- shadcn/ui
+- Arc
+- Native USDC
+
+---
+
+## 📂 Project Structure
+
+```
+flowusd/
+│
+├── app/
+├── components/
+│   ├── dashboard/
+│   ├── layout/
+│   ├── marketing/
+│   └── ui/
+│
+├── lib/
+├── public/
+│
+├── README.md
+├── package.json
+└── tsconfig.json
+```
+
+---
+
+## 🗺 Roadmap
+
+### Sprint 1
+
+- [x] Project setup
+- [x] GitHub repository
+- [x] Landing Page
+- [x] Open-source foundation
+
+### Sprint 2
+
+- [ ] Improve Landing Page
+- [ ] Dark Mode
+- [ ] Responsive polish
+
+### Sprint 3
+
+- [ ] Connect Arc Wallet
+- [ ] Wallet UI
+- [ ] Network Configuration
+
+### Sprint 4
+
+- [ ] Send USDC
+- [ ] Receive Payments
+- [ ] Transaction Memo
+
+### Sprint 5
+
+- [ ] Payment Links
+- [ ] QR Payments
+- [ ] Payment Requests
+
+### Sprint 6
+
+- [ ] Merchant Dashboard
+- [ ] Transaction History
+- [ ] Analytics
+
+### Sprint 7
+
+- [ ] Documentation
+- [ ] Deployment
+- [ ] Community Contributions
+
+---
+
+## 💻 Local Development
+
+Clone the repository:
+
+```bash
+git clone https://github.com/nguyenhuu0304/flowusd.git
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+http://localhost:3000
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## 🤝 Contributing
 
-To learn more about Next.js, take a look at the following resources:
+Contributions are welcome.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+If you'd like to improve FlowUSD:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Open a Pull Request
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 📄 License
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+This project will be released under the MIT License.
+
+---
+
+## ❤️ Built for Arc
+
+FlowUSD is an independent open-source project created to explore modern USDC payment experiences on Arc.
+
+This project is not an official Arc product.
