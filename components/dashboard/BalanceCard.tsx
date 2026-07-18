@@ -1,4 +1,8 @@
+import { useWallet } from "@/hooks/useWallet";
+
 export default function BalanceCard() {
+  const { wallet } = useWallet();
+
   return (
     <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
       <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
@@ -9,9 +13,12 @@ export default function BalanceCard() {
           </p>
 
           <h2 className="mt-2 text-5xl font-bold tracking-tight text-slate-900">
-            12,450.00
+            {wallet.balance.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
             <span className="ml-3 text-2xl font-semibold text-blue-600">
-              USDC
+              {wallet.currency}
             </span>
           </h2>
 
@@ -54,7 +61,7 @@ export default function BalanceCard() {
             </p>
 
             <p className="mt-2 font-mono text-sm text-slate-900">
-              0xA91C...5F12
+              {wallet.address}
             </p>
           </div>
 
@@ -64,7 +71,7 @@ export default function BalanceCard() {
             </p>
 
             <p className="mt-2 font-semibold text-slate-900">
-              Arc Mainnet
+              {wallet.network}
             </p>
           </div>
 
