@@ -1,28 +1,49 @@
 export default function Footer() {
   return (
-    <footer className="border-t border-slate-200 py-10">
-      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 text-sm text-slate-500 md:flex-row">
-        <p>© 2026 FlowUSD. Open Source.</p>
+    <footer className="border-t border-slate-200 bg-white">
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 px-6 py-10 text-sm text-slate-500 md:flex-row">
+        <div>
+          <h3 className="text-lg font-bold text-slate-900">FlowUSD</h3>
 
-        <div className="flex gap-6">
+          <p className="mt-2 max-w-sm">
+            Open-source payment infrastructure built for Arc.
+          </p>
+        </div>
+
+        <div className="flex gap-8">
           <a
-            href="https://docs.arc.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-blue-600"
+            href="#features"
+            className="transition hover:text-blue-600"
           >
-            Arc Docs
+            Features
           </a>
 
           <a
-            href="https://github.com"
+            href="#dashboard"
+            className="transition hover:text-blue-600"
+          >
+            Dashboard
+          </a>
+
+          <a
+            href="#cta"
+            className="transition hover:text-blue-600"
+          >
+            Get Started
+          </a>
+
+          <a
+            href="https://github.com/nguyenhuu0304/flowusd"
             target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-blue-600"
+            className="transition hover:text-blue-600"
           >
             GitHub
           </a>
         </div>
+      </div>
+
+      <div className="border-t border-slate-100 py-5 text-center text-sm text-slate-400">
+        © {new Date().getFullYear()} FlowUSD. MIT Licensed.
       </div>
     </footer>
   );
