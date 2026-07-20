@@ -1,16 +1,27 @@
+"use client";
+
 import {
   ArrowDownLeft,
   ArrowUpRight,
   CheckCircle2,
   Clock3,
 } from "lucide-react";
+import Card from "@/components/ui/Card";
 import { useTransactions } from "@/hooks/useTransactions";
 
 export default function RecentTransactions() {
-  const { transactions } = useTransactions();
+  const { transactions, loading } = useTransactions();
+
+  if (loading) {
+    return (
+      <Card>
+        <p className="text-slate-500">Loading transactions...</p>
+      </Card>
+    );
+  }
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <Card>
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900">
@@ -105,6 +116,6 @@ export default function RecentTransactions() {
           </tbody>
         </table>
       </div>
-    </div>
+    </Card>
   );
 }

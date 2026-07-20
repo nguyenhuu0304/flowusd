@@ -1,41 +1,30 @@
-"use client";
-
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/hooks/useAuth";
-
-export default function LoginPage() {
-  const router = useRouter();
-  const { login, loading } = useAuth();
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-
-    await login({
-      email,
-      password,
-    });
-
-    router.push("/dashboard");
-  }
-
+export default function RegisterPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6">
       <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold text-slate-900">
-            Welcome back
+            Create your account
           </h1>
 
           <p className="mt-2 text-slate-500">
-            Sign in to your FlowUSD account.
+            Join FlowUSD and start managing your stablecoin payments.
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form className="space-y-5">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Full Name
+            </label>
+
+            <input
+              type="text"
+              placeholder="John Doe"
+              className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-600"
+            />
+          </div>
+
           <div>
             <label className="mb-2 block text-sm font-medium text-slate-700">
               Email
@@ -44,10 +33,7 @@ export default function LoginPage() {
             <input
               type="email"
               placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-600"
-              required
             />
           </div>
 
@@ -59,29 +45,25 @@ export default function LoginPage() {
             <input
               type="password"
               placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-600"
-              required
             />
           </div>
 
           <button
             type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700"
           >
-            {loading ? "Signing In..." : "Sign In"}
+            Create Account
           </button>
         </form>
 
         <p className="mt-6 text-center text-sm text-slate-500">
-          Don't have an account?{" "}
+          Already have an account?{" "}
           <a
-            href="/register"
+            href="/login"
             className="font-medium text-blue-600 hover:underline"
           >
-            Create one
+            Sign in
           </a>
         </p>
       </div>

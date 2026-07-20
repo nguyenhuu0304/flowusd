@@ -1,24 +1,26 @@
+"use client";
+
+import Card from "@/components/ui/Card";
 import { useWallet } from "@/hooks/useWallet";
+import { formatCurrency } from "@/lib/format";
+import { CURRENCY, NETWORK_NAME } from "@/lib/constants";
 
 export default function BalanceCard() {
   const { wallet } = useWallet();
 
   return (
-    <section className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+    <Card className="p-8">
       <div className="flex flex-col gap-8 lg:flex-row lg:items-center lg:justify-between">
-        {/* Left */}
         <div>
           <p className="text-sm font-medium text-slate-500">
             Total Balance
           </p>
 
           <h2 className="mt-2 text-5xl font-bold tracking-tight text-slate-900">
-            {wallet.balance.toLocaleString(undefined, {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}
+            {formatCurrency(wallet.balance)}
+
             <span className="ml-3 text-2xl font-semibold text-blue-600">
-              {wallet.currency}
+              {CURRENCY}
             </span>
           </h2>
 
@@ -33,7 +35,6 @@ export default function BalanceCard() {
           </div>
         </div>
 
-        {/* Right */}
         <div className="grid grid-cols-2 gap-4">
           <button className="rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700">
             Send
@@ -71,7 +72,7 @@ export default function BalanceCard() {
             </p>
 
             <p className="mt-2 font-semibold text-slate-900">
-              {wallet.network}
+              {NETWORK_NAME}
             </p>
           </div>
 
@@ -86,6 +87,6 @@ export default function BalanceCard() {
           </div>
         </div>
       </div>
-    </section>
+    </Card>
   );
 }

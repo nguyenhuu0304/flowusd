@@ -24,3 +24,7 @@ export const transactions: Transaction[] = [
 export function getTransactions() {
   return transactions;
 }
+
+export function getTransactionById(id: string) {
+  return transactions.find((tx) => tx.id === id);
+}
