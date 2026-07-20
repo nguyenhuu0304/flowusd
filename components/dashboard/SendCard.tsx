@@ -1,9 +1,13 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import Card from "@/components/ui/Card";
-import Button from "@/components/ui/Button";
 import { SendHorizontal } from "lucide-react";
+
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+
+import { CURRENCY } from "@/lib/constants";
+import { sleep } from "@/lib/utils";
 
 export default function SendCard() {
   const [recipient, setRecipient] = useState("");
@@ -18,7 +22,7 @@ export default function SendCard() {
     setLoading(true);
     setSuccess(false);
 
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await sleep(1200);
 
     console.log({
       recipient,
@@ -36,7 +40,10 @@ export default function SendCard() {
 
   return (
     <Card className="p-8">
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form
+        onSubmit={handleSubmit}
+        className="space-y-6"
+      >
         <div>
           <label className="mb-2 block text-sm font-medium text-slate-700">
             Recipient Address
@@ -54,7 +61,7 @@ export default function SendCard() {
 
         <div>
           <label className="mb-2 block text-sm font-medium text-slate-700">
-            Amount (USDC)
+            Amount ({CURRENCY})
           </label>
 
           <input
@@ -79,7 +86,7 @@ export default function SendCard() {
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             placeholder="Payment for invoice..."
-            className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-600 resize-none"
+            className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-600"
           />
         </div>
 
@@ -97,7 +104,7 @@ export default function SendCard() {
           <SendHorizontal size={18} />
 
           <span>
-            {loading ? "Sending..." : "Send USDC"}
+            {loading ? "Sending..." : `Send ${CURRENCY}`}
           </span>
         </Button>
       </form>
