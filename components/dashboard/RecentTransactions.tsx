@@ -1,27 +1,41 @@
 "use client";
 
+import Link from "next/link";
 import {
   ArrowDownLeft,
   ArrowUpRight,
   CheckCircle2,
   Clock3,
 } from "lucide-react";
+
+import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+
 import { useTransactions } from "@/hooks/useTransactions";
+
+import { CURRENCY } from "@/lib/constants";
+import {
+  formatCurrency,
+  formatDate,
+} from "@/lib/format";
 
 export default function RecentTransactions() {
   const { transactions, loading } = useTransactions();
 
   if (loading) {
     return (
-      <Card>
-        <p className="text-slate-500">Loading transactions...</p>
+      <Card className="p-6">
+        <p className="text-slate-500">
+          Loading transactions...
+        </p>
       </Card>
     );
   }
 
+  const recentTransactions = transactions.slice(0, 5);
+
   return (
-    <Card>
+    <Card className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900">
@@ -33,27 +47,40 @@ export default function RecentTransactions() {
           </p>
         </div>
 
-        <button className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium hover:bg-slate-50">
-          View All
-        </button>
+        <Link href="/transactions">
+          <Button variant="outline">
+            View All
+          </Button>
+        </Link>
       </div>
 
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b text-left text-sm text-slate-500">
-              <th className="pb-3 font-medium">Transaction</th>
-              <th className="pb-3 font-medium">Date</th>
-              <th className="pb-3 font-medium">Status</th>
-              <th className="pb-3 text-right font-medium">Amount</th>
+              <th className="pb-3 font-medium">
+                Transaction
+              </th>
+
+              <th className="pb-3 font-medium">
+                Date
+              </th>
+
+              <th className="pb-3 font-medium">
+                Status
+              </th>
+
+              <th className="pb-3 text-right font-medium">
+                Amount
+              </th>
             </tr>
           </thead>
 
           <tbody>
-            {transactions.map((tx) => (
+            {recentTransactions.map((tx) => (
               <tr
                 key={tx.id}
-                className="border-b last:border-0 transition hover:bg-slate-50"
+                className="border-b transition hover:bg-slate-50 last:border-0"
               >
                 <td className="py-4">
                   <div className="flex items-center gap-4">
@@ -84,7 +111,7 @@ export default function RecentTransactions() {
                 </td>
 
                 <td className="text-sm text-slate-500">
-                  {tx.createdAt}
+                  {formatDate(tx.createdAt)}
                 </td>
 
                 <td>
@@ -109,7 +136,8 @@ export default function RecentTransactions() {
                   }`}
                 >
                   {tx.type === "income" ? "+" : "-"}
-                  {Math.abs(tx.amount).toFixed(2)} USDC
+                  {formatCurrency(Math.abs(tx.amount))}{" "}
+                  {CURRENCY}
                 </td>
               </tr>
             ))}

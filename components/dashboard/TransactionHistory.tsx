@@ -10,9 +10,17 @@ import {
   Search,
 } from "lucide-react";
 
-import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import Input from "@/components/ui/Input";
+
 import { useTransactions } from "@/hooks/useTransactions";
+
+import { CURRENCY } from "@/lib/constants";
+import {
+  formatCurrency,
+  formatDate,
+} from "@/lib/format";
 
 type FilterType = "all" | "income" | "expense";
 
@@ -20,7 +28,8 @@ export default function TransactionHistory() {
   const { transactions } = useTransactions();
 
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<FilterType>("all");
+  const [filter, setFilter] =
+    useState<FilterType>("all");
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
@@ -31,7 +40,9 @@ export default function TransactionHistory() {
         tx.address.toLowerCase().includes(keyword);
 
       const matchFilter =
-        filter === "all" ? true : tx.type === filter;
+        filter === "all"
+          ? true
+          : tx.type === filter;
 
       return matchSearch && matchFilter;
     });
@@ -46,32 +57,44 @@ export default function TransactionHistory() {
             className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
           />
 
-          <input
+          <Input
             type="text"
             placeholder="Search transactions..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-xl border border-slate-300 py-3 pl-11 pr-4 outline-none transition focus:border-blue-600"
+            className="pl-11"
           />
         </div>
 
         <div className="flex gap-2">
           <Button
-            variant={filter === "all" ? "default" : "outline"}
+            variant={
+              filter === "all"
+                ? "default"
+                : "outline"
+            }
             onClick={() => setFilter("all")}
           >
             All
           </Button>
 
           <Button
-            variant={filter === "income" ? "default" : "outline"}
+            variant={
+              filter === "income"
+                ? "default"
+                : "outline"
+            }
             onClick={() => setFilter("income")}
           >
             Income
           </Button>
 
           <Button
-            variant={filter === "expense" ? "default" : "outline"}
+            variant={
+              filter === "expense"
+                ? "default"
+                : "outline"
+            }
             onClick={() => setFilter("expense")}
           >
             Expense
@@ -83,11 +106,25 @@ export default function TransactionHistory() {
         <table className="w-full">
           <thead>
             <tr className="border-b text-left text-sm text-slate-500">
-              <th className="pb-4">Transaction</th>
-              <th className="pb-4">Date</th>
-              <th className="pb-4">Status</th>
-              <th className="pb-4 text-right">Amount</th>
-              <th className="pb-4 text-right">Action</th>
+              <th className="pb-4">
+                Transaction
+              </th>
+
+              <th className="pb-4">
+                Date
+              </th>
+
+              <th className="pb-4">
+                Status
+              </th>
+
+              <th className="pb-4 text-right">
+                Amount
+              </th>
+
+              <th className="pb-4 text-right">
+                Action
+              </th>
             </tr>
           </thead>
 
@@ -126,11 +163,12 @@ export default function TransactionHistory() {
                 </td>
 
                 <td className="text-sm text-slate-500">
-                  {tx.createdAt}
+                  {formatDate(tx.createdAt)}
                 </td>
 
                 <td>
-                  {tx.status === "completed" ? (
+                  {tx.status ===
+                  "completed" ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
                       <CheckCircle2 size={14} />
                       Completed
@@ -150,12 +188,19 @@ export default function TransactionHistory() {
                       : "text-red-500"
                   }`}
                 >
-                  {tx.type === "income" ? "+" : "-"}
-                  {Math.abs(tx.amount).toLocaleString()} USDC
+                  {tx.type === "income"
+                    ? "+"
+                    : "-"}
+                  {formatCurrency(
+                    Math.abs(tx.amount)
+                  )}{" "}
+                  {CURRENCY}
                 </td>
 
                 <td className="text-right">
-                  <Link href={`/transactions/${tx.id}`}>
+                  <Link
+                    href={`/transactions/${tx.id}`}
+                  >
                     <Button variant="outline">
                       View
                     </Button>
@@ -164,7 +209,8 @@ export default function TransactionHistory() {
               </tr>
             ))}
 
-            {filteredTransactions.length === 0 && (
+            {filteredTransactions.length ===
+              0 && (
               <tr>
                 <td
                   colSpan={5}

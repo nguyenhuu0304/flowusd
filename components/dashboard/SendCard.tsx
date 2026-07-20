@@ -5,6 +5,8 @@ import { SendHorizontal } from "lucide-react";
 
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import Input from "@/components/ui/Input";
+import Textarea from "@/components/ui/Textarea";
 
 import { CURRENCY } from "@/lib/constants";
 import { sleep } from "@/lib/utils";
@@ -13,6 +15,7 @@ export default function SendCard() {
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -49,13 +52,12 @@ export default function SendCard() {
             Recipient Address
           </label>
 
-          <input
+          <Input
             type="text"
             value={recipient}
             onChange={(e) => setRecipient(e.target.value)}
             placeholder="0x..."
             required
-            className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-600"
           />
         </div>
 
@@ -64,7 +66,7 @@ export default function SendCard() {
             Amount ({CURRENCY})
           </label>
 
-          <input
+          <Input
             type="number"
             min="0"
             step="0.01"
@@ -72,7 +74,6 @@ export default function SendCard() {
             onChange={(e) => setAmount(e.target.value)}
             placeholder="100"
             required
-            className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-600"
           />
         </div>
 
@@ -81,12 +82,11 @@ export default function SendCard() {
             Memo (Optional)
           </label>
 
-          <textarea
+          <Textarea
             rows={4}
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             placeholder="Payment for invoice..."
-            className="w-full resize-none rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-blue-600"
           />
         </div>
 

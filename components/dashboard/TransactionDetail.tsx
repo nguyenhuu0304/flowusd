@@ -1,10 +1,27 @@
 "use client";
 
 import { useState } from "react";
-import Card from "@/components/ui/Card";
-import Button from "@/components/ui/Button";
 import { Copy, ExternalLink, CheckCircle2 } from "lucide-react";
+import { toast } from "sonner";
+
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+
 import { getTransactionById } from "@/services/transaction.service";
+
+import {
+  COPY_SUCCESS_DURATION,
+  CURRENCY,
+  EXPLORER_URL,
+  NETWORK_NAME,
+} from "@/lib/constants";
+
+import {
+  formatCurrency,
+  formatDate,
+} from "@/lib/format";
+
+import { copyToClipboard } from "@/lib/utils";
 
 type Props = {
   id: string;
@@ -12,6 +29,7 @@ type Props = {
 
 export default function TransactionDetail({ id }: Props) {
   const tx = getTransactionById(id);
+
   const [copied, setCopied] = useState(false);
 
   if (!tx) {
@@ -25,26 +43,28 @@ export default function TransactionDetail({ id }: Props) {
   }
 
   async function handleCopy() {
-    await navigator.clipboard.writeText(tx.id);
+    try {
+      await copyToClipboard(tx.id);
 
-    setCopied(true);
+      setCopied(true);
 
-    setTimeout(() => {
-      setCopied(false);
-    }, 2000);
+      toast.success("Transaction ID copied.");
+
+      setTimeout(() => {
+        setCopied(false);
+      }, COPY_SUCCESS_DURATION);
+    } catch {
+      toast.error("Failed to copy transaction ID.");
+    }
   }
 
   function handleExplorer() {
     window.open(
-      `https://explorer.example.com/tx/${tx.id}`,
-      "_blank"
+      `${EXPLORER_URL}/tx/${tx.id}`,
+      "_blank",
+      "noopener,noreferrer"
     );
   }
-
-  const formattedAmount = new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(Math.abs(tx.amount));
 
   return (
     <Card className="p-8">
@@ -67,7 +87,9 @@ export default function TransactionDetail({ id }: Props) {
 
           <Info
             label="Amount"
-            value={`${formattedAmount} USDC`}
+            value={`${formatCurrency(
+              Math.abs(tx.amount)
+            )} ${CURRENCY}`}
           />
 
           <Info
@@ -82,12 +104,12 @@ export default function TransactionDetail({ id }: Props) {
 
           <Info
             label="Network"
-            value="Arc Mainnet"
+            value={NETWORK_NAME}
           />
 
           <Info
             label="Created At"
-            value={tx.createdAt}
+            value={formatDate(tx.createdAt)}
           />
         </div>
 
@@ -96,8 +118,15 @@ export default function TransactionDetail({ id }: Props) {
             Status
           </p>
 
-          <span className="inline-flex items-center gap-2 rounded-full bg-green-100 px-4 py-2 text-sm font-medium text-green-700">
+          <span
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium ${
+              tx.status === "completed"
+                ? "bg-green-100 text-green-700"
+                : "bg-yellow-100 text-yellow-700"
+            }`}
+          >
             <CheckCircle2 size={16} />
+
             {tx.status === "completed"
               ? "Completed"
               : "Pending"}
@@ -134,7 +163,10 @@ type InfoProps = {
   value: string;
 };
 
-function Info({ label, value }: InfoProps) {
+function Info({
+  label,
+  value,
+}: InfoProps) {
   return (
     <div>
       <p className="text-sm text-slate-500">
