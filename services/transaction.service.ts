@@ -1,30 +1,20 @@
-import { Transaction } from "@/types/transaction";
+import {
+  getTransactions as getTransactionsApi,
+  getTransaction as getTransactionApi,
+} from "@/lib/api/transaction";
 
-export const transactions: Transaction[] = [
-  {
-    id: "tx-001",
-    name: "Coffee Shop",
-    address: "0xA91C...5F12",
-    amount: -5.2,
-    type: "expense",
-    status: "completed",
-    createdAt: "2026-07-18",
-  },
-  {
-    id: "tx-002",
-    name: "Salary",
-    address: "Company Payroll",
-    amount: 2500,
-    type: "income",
-    status: "completed",
-    createdAt: "2026-07-17",
-  },
-];
+import type { Transaction } from "@/types/transaction";
 
-export function getTransactions() {
-  return transactions;
+export async function getTransactions(): Promise<Transaction[]> {
+  return getTransactionsApi();
 }
 
-export function getTransactionById(id: string) {
-  return transactions.find((tx) => tx.id === id);
+export async function getTransaction(
+  id: string
+): Promise<Transaction | null> {
+  try {
+    return await getTransactionApi(id);
+  } catch {
+    return null;
+  }
 }

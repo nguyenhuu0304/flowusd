@@ -3,6 +3,7 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useMemo,
   useState,
   ReactNode,
@@ -15,10 +16,12 @@ import {
   LoginPayload,
   RegisterPayload,
 } from "@/services/auth.service";
+import { loadSession } from "@/lib/session";
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  initializing: boolean;
   login: (payload: LoginPayload) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
   logout: () => Promise<void>;
@@ -33,6 +36,24 @@ export function AuthProvider({
 }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initializing, setInitializing] = useState(true);
+
+  // Restore a previously logged-in session (if any) so a page refresh
+  // doesn't kick the user back out to /login. This runs in an effect
+  // (rather than a lazy useState initializer) on purpose: localStorage
+  // isn't available during server rendering, so reading it eagerly
+  // would make the client's first render diverge from the server's
+  // and trigger a hydration mismatch.
+  useEffect(() => {
+    const session = loadSession();
+
+    if (session) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
+      setUser(session.user);
+    }
+
+    setInitializing(false);
+  }, []);
 
   async function login(payload: LoginPayload) {
     setLoading(true);
@@ -71,11 +92,12 @@ export function AuthProvider({
     () => ({
       user,
       loading,
+      initializing,
       login,
       register,
       logout,
     }),
-    [user, loading]
+    [user, loading, initializing]
   );
 
   return (

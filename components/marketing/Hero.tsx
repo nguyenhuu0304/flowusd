@@ -1,8 +1,10 @@
+import Link from "next/link";
+
 import DashboardPreview from "./DashboardPreview";
 
 export default function Hero() {
   return (
-    <section className="mx-auto max-w-7xl px-6 py-24">
+    <section id="dashboard" className="mx-auto max-w-7xl px-6 py-24">
       <div className="grid items-center gap-16 lg:grid-cols-2">
         {/* Left */}
         <div>
@@ -22,13 +24,20 @@ export default function Hero() {
           </p>
 
           <div className="mt-10 flex flex-col gap-4 sm:flex-row">
-            <button className="rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700">
+            <Link
+              href="/register"
+              className="rounded-xl bg-blue-600 px-6 py-3 text-center font-semibold text-white transition hover:bg-blue-700"
+            >
               Get Started
-            </button>
+            </Link>
 
-            <button className="rounded-xl border border-slate-300 px-6 py-3 font-semibold transition hover:bg-slate-100">
+            <Link
+              href="https://github.com/nguyenhuu0304/flowusd"
+              target="_blank"
+              className="rounded-xl border border-slate-300 px-6 py-3 text-center font-semibold transition hover:bg-slate-100"
+            >
               View on GitHub
-            </button>
+            </Link>
           </div>
 
           <div className="mt-12 flex flex-wrap gap-6 text-sm text-slate-600">

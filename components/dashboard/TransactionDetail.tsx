@@ -1,38 +1,82 @@
 "use client";
 
-import { useState } from "react";
-import { Copy, ExternalLink, CheckCircle2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+  CheckCircle2,
+  Clock3,
+  Copy,
+  ExternalLink,
+} from "lucide-react";
 import { toast } from "sonner";
 
-import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
 
-import { getTransactionById } from "@/services/transaction.service";
+import { getTransaction } from "@/services/transaction.service";
+import type { Transaction } from "@/types/transaction";
 
 import {
-  COPY_SUCCESS_DURATION,
   CURRENCY,
-  EXPLORER_URL,
   NETWORK_NAME,
+  COPY_SUCCESS_DURATION,
 } from "@/lib/constants";
+
+import { copyToClipboard } from "@/lib/utils";
 
 import {
   formatCurrency,
   formatDate,
 } from "@/lib/format";
 
-import { copyToClipboard } from "@/lib/utils";
-
 type Props = {
   id: string;
 };
 
-export default function TransactionDetail({ id }: Props) {
-  const tx = getTransactionById(id);
-
+export default function TransactionDetail({
+  id,
+}: Props) {
+  const [transaction, setTransaction] = useState<Transaction | null>(null);
+  const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  if (!tx) {
+  useEffect(() => {
+    let active = true;
+
+    async function load() {
+      setLoading(true);
+
+      try {
+        const data = await getTransaction(id);
+        if (active) setTransaction(data);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <Card className="p-8">
+        <div className="animate-pulse space-y-6">
+          <div className="h-6 w-64 rounded bg-slate-200" />
+
+          <div className="grid gap-6 md:grid-cols-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="h-16 rounded-xl bg-slate-200" />
+            ))}
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  if (!transaction) {
     return (
       <Card className="p-8">
         <p className="text-center text-slate-500">
@@ -42,13 +86,15 @@ export default function TransactionDetail({ id }: Props) {
     );
   }
 
+  const tx = transaction;
+
   async function handleCopy() {
     try {
       await copyToClipboard(tx.id);
 
       setCopied(true);
 
-      toast.success("Transaction ID copied.");
+      toast.success("Transaction ID copied!");
 
       setTimeout(() => {
         setCopied(false);
@@ -60,7 +106,7 @@ export default function TransactionDetail({ id }: Props) {
 
   function handleExplorer() {
     window.open(
-      `${EXPLORER_URL}/tx/${tx.id}`,
+      `https://explorer.example.com/tx/${tx.id}`,
       "_blank",
       "noopener,noreferrer"
     );
@@ -94,12 +140,20 @@ export default function TransactionDetail({ id }: Props) {
 
           <Info
             label="From"
-            value="My Wallet"
+            value={
+              tx.type === "expense"
+                ? "My Wallet"
+                : tx.address
+            }
           />
 
           <Info
             label="To"
-            value={tx.address}
+            value={
+              tx.type === "expense"
+                ? tx.address
+                : "My Wallet"
+            }
           />
 
           <Info
@@ -118,25 +172,22 @@ export default function TransactionDetail({ id }: Props) {
             Status
           </p>
 
-          <span
-            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium ${
-              tx.status === "completed"
-                ? "bg-green-100 text-green-700"
-                : "bg-yellow-100 text-yellow-700"
-            }`}
-          >
-            <CheckCircle2 size={16} />
-
-            {tx.status === "completed"
-              ? "Completed"
-              : "Pending"}
-          </span>
+          {tx.status === "completed" ? (
+            <span className="inline-flex items-center gap-2 rounded-full bg-green-100 px-4 py-2 text-sm font-medium text-green-700">
+              <CheckCircle2 size={16} />
+              Completed
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-2 rounded-full bg-yellow-100 px-4 py-2 text-sm font-medium text-yellow-700">
+              <Clock3 size={16} />
+              Pending
+            </span>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-4">
           <Button onClick={handleCopy}>
             <Copy size={18} />
-
             <span>
               {copied
                 ? "Copied!"
@@ -149,7 +200,6 @@ export default function TransactionDetail({ id }: Props) {
             onClick={handleExplorer}
           >
             <ExternalLink size={18} />
-
             <span>Open Explorer</span>
           </Button>
         </div>

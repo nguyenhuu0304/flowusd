@@ -1,3 +1,11 @@
+import {
+  login as loginApi,
+  register as registerApi,
+  logout as logoutApi,
+} from "@/lib/api/auth";
+
+import { saveSession, clearSession } from "@/lib/session";
+
 export interface LoginPayload {
   email: string;
   password: string;
@@ -15,38 +23,34 @@ export interface User {
   email: string;
 }
 
-const mockUser: User = {
-  id: "user-001",
-  name: "John Doe",
-  email: "john@example.com",
-};
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export async function login(
   payload: LoginPayload
 ): Promise<User> {
-  await delay(700);
+  const { user, token } = await loginApi(payload);
 
-  console.log("Login:", payload);
+  saveSession({ user, token });
 
-  return mockUser;
+  return user;
 }
 
 export async function register(
   payload: RegisterPayload
 ): Promise<User> {
-  await delay(700);
+  const { user, token } = await registerApi(payload);
 
-  console.log("Register:", payload);
+  saveSession({ user, token });
 
-  return mockUser;
+  return user;
 }
 
-export async function logout() {
-  await delay(300);
-
-  return true;
+export async function logout(): Promise<void> {
+  try {
+    await logoutApi();
+  } catch (error) {
+    // Best-effort: even if the mock API call fails, still clear the
+    // local session so the user isn't stuck "logged in".
+    console.error("Logout request failed:", error);
+  } finally {
+    clearSession();
+  }
 }

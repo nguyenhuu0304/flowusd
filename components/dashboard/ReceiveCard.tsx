@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import QRCode from "react-qr-code";
+import { toPng } from "html-to-image";
 import { toast } from "sonner";
-import { Check, Copy, QrCode, Share2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Download,
+  Share2,
+} from "lucide-react";
 
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -16,15 +23,41 @@ import {
 } from "@/lib/constants";
 
 import { formatCurrency } from "@/lib/format";
-
 import { copyToClipboard } from "@/lib/utils";
 
 export default function ReceiveCard() {
-  const { wallet } = useWallet();
+  const { wallet, loading } = useWallet();
+
+  const qrRef = useRef<HTMLDivElement>(null);
 
   const [copied, setCopied] = useState(false);
 
+  if (loading || !wallet) {
+    return (
+      <Card className="p-8">
+        <div className="animate-pulse flex flex-col gap-8 lg:flex-row">
+          <div className="flex-1 space-y-5">
+            <div className="h-8 w-48 rounded bg-slate-200" />
+            <div className="h-4 w-72 rounded bg-slate-200" />
+            <div className="h-20 w-full rounded-xl bg-slate-200" />
+            <div className="grid grid-cols-2 gap-4">
+              <div className="h-11 rounded-xl bg-slate-200" />
+              <div className="h-11 rounded-xl bg-slate-200" />
+            </div>
+            <div className="h-11 rounded-xl bg-slate-200" />
+          </div>
+
+          <div className="flex items-center justify-center">
+            <div className="h-64 w-64 rounded-3xl bg-slate-200" />
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
   async function handleCopy() {
+    if (!wallet) return;
+
     try {
       await copyToClipboard(wallet.address);
 
@@ -42,9 +75,32 @@ export default function ReceiveCard() {
     }
   }
 
+  async function handleDownload() {
+    if (!wallet || !qrRef.current) return;
+
+    try {
+      const dataUrl = await toPng(qrRef.current, {
+        cacheBust: true,
+        pixelRatio: 3,
+      });
+
+      const link = document.createElement("a");
+
+      link.download = "flowusd-wallet-qr.png";
+      link.href = dataUrl;
+
+      link.click();
+
+      toast.success("QR Code downloaded!");
+    } catch {
+      toast.error("Failed to download QR Code.");
+    }
+  }
+
   function handleShare() {
     toast.info("Share feature", {
-      description: "Sharing wallet address will be available soon.",
+      description:
+        "Sharing wallet address will be available soon.",
     });
   }
 
@@ -57,7 +113,8 @@ export default function ReceiveCard() {
           </h2>
 
           <p className="mt-2 text-slate-500">
-            Share your wallet address or QR code to receive payments.
+            Share your wallet address or QR code to receive
+            payments.
           </p>
 
           <div className="mt-8">
@@ -100,6 +157,17 @@ export default function ReceiveCard() {
             </Button>
           </div>
 
+          <div className="mt-4">
+            <Button
+              variant="outline"
+              onClick={handleDownload}
+              className="w-full justify-center"
+            >
+              <Download size={18} />
+              <span>Download QR</span>
+            </Button>
+          </div>
+
           <div className="mt-8 grid gap-4 md:grid-cols-2">
             <div>
               <p className="text-sm text-slate-500">
@@ -124,15 +192,21 @@ export default function ReceiveCard() {
         </div>
 
         <div className="flex flex-col items-center">
-          <div className="flex h-64 w-64 items-center justify-center rounded-3xl border-2 border-dashed border-slate-300 bg-slate-100">
-            <QrCode
-              size={96}
-              className="text-slate-400"
+          <div
+            ref={qrRef}
+            className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+          >
+            <QRCode
+              value={wallet.address}
+              size={220}
+              bgColor="#ffffff"
+              fgColor="#0f172a"
+              level="M"
             />
           </div>
 
           <p className="mt-4 text-sm text-slate-500">
-            QR Code will be generated here.
+            Scan this QR code to receive {CURRENCY}.
           </p>
         </div>
       </div>

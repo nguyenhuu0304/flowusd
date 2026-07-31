@@ -1,6 +1,8 @@
+import Link from "next/link";
+
 export default function CTA() {
   return (
-    <section className="py-24">
+    <section id="cta" className="py-24">
       <div className="mx-auto max-w-6xl px-6">
         <div className="overflow-hidden rounded-3xl bg-gradient-to-r from-blue-600 to-indigo-600 px-10 py-20 text-center text-white shadow-2xl">
           <h2 className="text-4xl font-bold md:text-5xl">
@@ -13,13 +15,20 @@ export default function CTA() {
           </p>
 
           <div className="mt-10 flex flex-col justify-center gap-4 sm:flex-row">
-            <button className="rounded-xl bg-white px-8 py-4 font-semibold text-blue-600 transition hover:scale-105">
+            <Link
+              href="/register"
+              className="rounded-xl bg-white px-8 py-4 text-center font-semibold text-blue-600 transition hover:scale-105"
+            >
               Get Started
-            </button>
+            </Link>
 
-            <button className="rounded-xl border border-white px-8 py-4 font-semibold text-white transition hover:bg-white hover:text-blue-600">
+            <Link
+              href="https://github.com/nguyenhuu0304/flowusd"
+              target="_blank"
+              className="rounded-xl border border-white px-8 py-4 text-center font-semibold text-white transition hover:bg-white hover:text-blue-600"
+            >
               View GitHub
-            </button>
+            </Link>
           </div>
         </div>
       </div>

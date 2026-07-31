@@ -1,12 +1,42 @@
 "use client";
 
+import Link from "next/link";
+import { toast } from "sonner";
+
 import Card from "@/components/ui/Card";
 import { useWallet } from "@/hooks/useWallet";
 import { formatCurrency } from "@/lib/format";
 import { CURRENCY, NETWORK_NAME } from "@/lib/constants";
 
+function comingSoon(feature: string) {
+  toast.info("Coming soon", {
+    description: `${feature} isn't available yet.`,
+  });
+}
+
 export default function BalanceCard() {
-  const { wallet } = useWallet();
+  const { wallet, loading } = useWallet();
+
+  if (loading || !wallet) {
+    return (
+      <Card className="p-8">
+        <div className="animate-pulse space-y-6">
+          <div className="h-4 w-32 rounded bg-slate-200" />
+
+          <div className="h-12 w-80 rounded bg-slate-200" />
+
+          <div className="h-6 w-52 rounded bg-slate-200" />
+
+          <div className="grid grid-cols-2 gap-4 lg:w-96">
+            <div className="h-12 rounded-xl bg-slate-200" />
+            <div className="h-12 rounded-xl bg-slate-200" />
+            <div className="h-12 rounded-xl bg-slate-200" />
+            <div className="h-12 rounded-xl bg-slate-200" />
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card className="p-8">
@@ -24,31 +54,34 @@ export default function BalanceCard() {
             </span>
           </h2>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3">
-            <span className="rounded-full bg-emerald-100 px-3 py-1 text-sm font-medium text-emerald-700">
-              +4.82%
-            </span>
-
-            <span className="text-sm text-slate-500">
-              Compared to last month
-            </span>
-          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <button className="rounded-xl bg-blue-600 px-6 py-3 font-semibold text-white transition hover:bg-blue-700">
+          <Link
+            href="/send"
+            className="rounded-xl bg-blue-600 px-6 py-3 text-center font-semibold text-white transition hover:bg-blue-700"
+          >
             Send
-          </button>
+          </Link>
 
-          <button className="rounded-xl border border-slate-300 px-6 py-3 font-semibold transition hover:bg-slate-50">
+          <Link
+            href="/receive"
+            className="rounded-xl border border-slate-300 px-6 py-3 text-center font-semibold transition hover:bg-slate-50"
+          >
             Receive
-          </button>
+          </Link>
 
-          <button className="rounded-xl border border-slate-300 px-6 py-3 font-semibold transition hover:bg-slate-50">
+          <button
+            onClick={() => comingSoon("Deposit")}
+            className="rounded-xl border border-slate-300 px-6 py-3 font-semibold transition hover:bg-slate-50"
+          >
             Deposit
           </button>
 
-          <button className="rounded-xl border border-slate-300 px-6 py-3 font-semibold transition hover:bg-slate-50">
+          <button
+            onClick={() => comingSoon("Withdraw")}
+            className="rounded-xl border border-slate-300 px-6 py-3 font-semibold transition hover:bg-slate-50"
+          >
             Withdraw
           </button>
         </div>

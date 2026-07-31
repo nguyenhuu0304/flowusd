@@ -1,97 +1,115 @@
 "use client";
 
+import { useState } from "react";
+import {
+  Wallet,
+  Copy,
+  Check,
+} from "lucide-react";
+import { toast } from "sonner";
+
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
+
 import { useWallet } from "@/hooks/useWallet";
-import { Copy, QrCode, Wallet } from "lucide-react";
+
+import {
+  CURRENCY,
+  COPY_SUCCESS_DURATION,
+} from "@/lib/constants";
+
+import {
+  formatCurrency,
+} from "@/lib/format";
+
+import {
+  copyToClipboard,
+} from "@/lib/utils";
 
 export default function WalletCard() {
-  const { wallet } = useWallet();
+  const { wallet, loading } = useWallet();
 
-  async function copyAddress() {
-    await navigator.clipboard.writeText(wallet.address);
-    alert("Wallet address copied!");
+  const [copied, setCopied] = useState(false);
+
+  if (loading || !wallet) {
+    return (
+      <Card className="p-6">
+        <div className="animate-pulse space-y-4">
+          <div className="h-6 w-40 rounded bg-slate-200" />
+          <div className="h-10 w-full rounded bg-slate-200" />
+          <div className="h-10 w-32 rounded bg-slate-200" />
+        </div>
+      </Card>
+    );
+  }
+
+  // Sau đoạn này wallet chắc chắn không còn null
+  const currentWallet = wallet;
+
+  async function handleCopy() {
+    try {
+      await copyToClipboard(currentWallet.address);
+
+      setCopied(true);
+
+      toast.success("Wallet address copied!");
+
+      setTimeout(() => {
+        setCopied(false);
+      }, COPY_SUCCESS_DURATION);
+    } catch {
+      toast.error("Failed to copy wallet address.");
+    }
   }
 
   return (
-    <Card className="p-8">
-      <div className="flex flex-col gap-8 lg:flex-row lg:justify-between">
-        {/* Wallet Info */}
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-100 text-blue-600">
-              <Wallet size={24} />
-            </div>
+    <Card className="p-6">
+      <div className="flex items-center gap-3">
+        <Wallet className="text-blue-600" size={24} />
 
-            <div>
-              <h2 className="text-2xl font-bold text-slate-900">
-                My Wallet
-              </h2>
+        <div>
+          <h2 className="text-lg font-semibold">
+            My Wallet
+          </h2>
 
-              <p className="text-slate-500">
-                Connected to {wallet.network}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-8">
-            <p className="text-sm text-slate-500">
-              Available Balance
-            </p>
-
-            <h3 className="mt-2 text-5xl font-bold text-slate-900">
-              {wallet.balance.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
-
-              <span className="ml-3 text-2xl text-blue-600">
-                {wallet.currency}
-              </span>
-            </h3>
-          </div>
-
-          <div className="mt-8">
-            <p className="text-sm text-slate-500">
-              Wallet Address
-            </p>
-
-            <div className="mt-2 flex items-center gap-3">
-              <code className="rounded-lg bg-slate-100 px-3 py-2 font-mono text-sm">
-                {wallet.address}
-              </code>
-
-              <Button
-                variant="outline"
-                onClick={copyAddress}
-                className="px-4"
-              >
-                <Copy size={18} />
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-8">
-            <span className="inline-flex rounded-full bg-emerald-100 px-4 py-2 text-sm font-medium text-emerald-700">
-              ● Connected
-            </span>
-          </div>
-        </div>
-
-        {/* QR Placeholder */}
-        <div className="flex flex-col items-center justify-center">
-          <div className="flex h-56 w-56 items-center justify-center rounded-3xl border-2 border-dashed border-slate-300 bg-slate-100">
-            <QrCode
-              size={80}
-              className="text-slate-400"
-            />
-          </div>
-
-          <p className="mt-4 text-sm text-slate-500">
-            QR Code (Coming Soon)
+          <p className="text-sm text-slate-500">
+            Current Balance
           </p>
         </div>
       </div>
+
+      <div className="mt-6">
+        <p className="text-3xl font-bold">
+          {formatCurrency(currentWallet.balance)} {CURRENCY}
+        </p>
+      </div>
+
+      <div className="mt-6">
+        <p className="mb-2 text-sm text-slate-500">
+          Wallet Address
+        </p>
+
+        <div className="break-all rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+          {currentWallet.address}
+        </div>
+      </div>
+
+      <Button
+        onClick={handleCopy}
+        className="mt-6 w-full justify-center"
+      >
+        {copied ? (
+          <>
+            <Check size={18} />
+            <span>Copied</span>
+          </>
+        ) : (
+          <>
+            <Copy size={18} />
+            <span>Copy Address</span>
+          </>
+        )}
+      </Button>
     </Card>
   );
 }

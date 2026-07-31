@@ -8,34 +8,36 @@ import {
   Clock3,
 } from "lucide-react";
 
-import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
 
 import { useTransactions } from "@/hooks/useTransactions";
 
 import { CURRENCY } from "@/lib/constants";
-import {
-  formatCurrency,
-  formatDate,
-} from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 export default function RecentTransactions() {
   const { transactions, loading } = useTransactions();
 
   if (loading) {
     return (
-      <Card className="p-6">
-        <p className="text-slate-500">
-          Loading transactions...
-        </p>
+      <Card>
+        <div className="space-y-4 animate-pulse">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-16 rounded-xl bg-slate-200"
+            />
+          ))}
+        </div>
       </Card>
     );
   }
 
-  const recentTransactions = transactions.slice(0, 5);
+  const recent = transactions.slice(0, 5);
 
   return (
-    <Card className="p-6">
+    <Card>
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-slate-900">
@@ -77,10 +79,10 @@ export default function RecentTransactions() {
           </thead>
 
           <tbody>
-            {recentTransactions.map((tx) => (
+            {recent.map((tx) => (
               <tr
                 key={tx.id}
-                className="border-b transition hover:bg-slate-50 last:border-0"
+                className="border-b last:border-0 transition hover:bg-slate-50"
               >
                 <td className="py-4">
                   <div className="flex items-center gap-4">
@@ -141,6 +143,17 @@ export default function RecentTransactions() {
                 </td>
               </tr>
             ))}
+
+            {recent.length === 0 && (
+              <tr>
+                <td
+                  colSpan={4}
+                  className="py-10 text-center text-slate-500"
+                >
+                  No transactions yet.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

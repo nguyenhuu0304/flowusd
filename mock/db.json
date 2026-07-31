@@ -1,0 +1,45 @@
+{
+  "wallet": {
+    "id": 1,
+    "address": "0x7eB1F8F0C8B9e1234567890ABCDE123456789ABC",
+    "balance": 12450.75,
+    "currency": "USDC"
+  },
+  "transactions": [
+    {
+      "id": "tx001",
+      "name": "Alice",
+      "address": "0xA1B2C3D4E5F6",
+      "amount": 250,
+      "type": "income",
+      "status": "completed",
+      "createdAt": "2026-07-26T10:30:00Z"
+    },
+    {
+      "id": "tx002",
+      "name": "Netflix",
+      "address": "0xFF8899AA1122",
+      "amount": -19.99,
+      "type": "expense",
+      "status": "completed",
+      "createdAt": "2026-07-25T18:00:00Z"
+    },
+    {
+      "id": "tx003",
+      "name": "Amazon",
+      "address": "0x998877665544",
+      "amount": -120,
+      "type": "expense",
+      "status": "pending",
+      "createdAt": "2026-07-24T09:15:00Z"
+    }
+  ],
+  "users": [
+    {
+      "id": "user_demo",
+      "name": "John Doe",
+      "email": "demo@flowusd.app",
+      "password": "demo1234"
+    }
+  ]
+}

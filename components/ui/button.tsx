@@ -1,18 +1,28 @@
 import { ButtonHTMLAttributes, ReactNode } from "react";
-import { cn } from "@/lib/utils";
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+type ButtonVariant =
+  | "default"
+  | "primary"
+  | "secondary"
+  | "outline"
+  | "danger";
+
+interface ButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
-  variant?: "primary" | "secondary" | "outline" | "danger";
+  variant?: ButtonVariant;
 }
 
 export default function Button({
   children,
   variant = "primary",
-  className,
+  className = "",
   ...props
 }: ButtonProps) {
-  const variants = {
+  const variants: Record<ButtonVariant, string> = {
+    default:
+      "bg-blue-600 text-white hover:bg-blue-700",
+
     primary:
       "bg-blue-600 text-white hover:bg-blue-700",
 
@@ -20,7 +30,7 @@ export default function Button({
       "bg-slate-900 text-white hover:bg-slate-800",
 
     outline:
-      "border border-slate-300 bg-white hover:bg-slate-50",
+      "border border-slate-300 bg-white text-slate-900 hover:bg-slate-50",
 
     danger:
       "bg-red-600 text-white hover:bg-red-700",
@@ -29,7 +39,7 @@ export default function Button({
   return (
     <button
       className={[
-        "rounded-xl px-6 py-3 font-semibold transition",
+        "inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50",
         variants[variant],
         className,
       ]

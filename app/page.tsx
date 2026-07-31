@@ -1,17 +1,23 @@
-import Sidebar from "@/components/dashboard/Sidebar";
-import Topbar from "@/components/dashboard/Topbar";
-import DashboardContent from "@/components/dashboard/DashboardContent";
+import Navbar from "@/components/layout/Navbar";
+import Footer from "@/components/layout/Footer";
+import Hero from "@/components/marketing/Hero";
+import Features from "@/components/marketing/Features";
+import HowItWorks from "@/components/marketing/HowItWorks";
+import CTA from "@/components/marketing/CTA";
 
-export default function DashboardPage() {
+export default function HomePage() {
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <Sidebar />
+    <div className="flex min-h-screen flex-col bg-white">
+      <Navbar />
 
-      <div className="flex flex-1 flex-col">
-        <Topbar />
+      <main className="flex-1">
+        <Hero />
+        <Features />
+        <HowItWorks />
+        <CTA />
+      </main>
 
-        <DashboardContent />
-      </div>
+      <Footer />
     </div>
   );
 }

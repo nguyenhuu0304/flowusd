@@ -10,22 +10,21 @@ import {
   Search,
 } from "lucide-react";
 
-import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
-import Input from "@/components/ui/Input";
+import Button from "@/components/ui/Button";
 
 import { useTransactions } from "@/hooks/useTransactions";
 
 import { CURRENCY } from "@/lib/constants";
-import {
-  formatCurrency,
-  formatDate,
-} from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 type FilterType = "all" | "income" | "expense";
 
 export default function TransactionHistory() {
-  const { transactions } = useTransactions();
+  const {
+    transactions,
+    loading,
+  } = useTransactions();
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] =
@@ -48,6 +47,21 @@ export default function TransactionHistory() {
     });
   }, [transactions, search, filter]);
 
+  if (loading) {
+    return (
+      <Card className="p-6">
+        <div className="space-y-4 animate-pulse">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-16 rounded-xl bg-slate-200"
+            />
+          ))}
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <Card className="p-6">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -57,12 +71,14 @@ export default function TransactionHistory() {
             className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
           />
 
-          <Input
+          <input
             type="text"
             placeholder="Search transactions..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-11"
+            onChange={(e) =>
+              setSearch(e.target.value)
+            }
+            className="w-full rounded-xl border border-slate-300 py-3 pl-11 pr-4 outline-none transition focus:border-blue-600"
           />
         </div>
 
@@ -73,7 +89,9 @@ export default function TransactionHistory() {
                 ? "default"
                 : "outline"
             }
-            onClick={() => setFilter("all")}
+            onClick={() =>
+              setFilter("all")
+            }
           >
             All
           </Button>
@@ -84,7 +102,9 @@ export default function TransactionHistory() {
                 ? "default"
                 : "outline"
             }
-            onClick={() => setFilter("income")}
+            onClick={() =>
+              setFilter("income")
+            }
           >
             Income
           </Button>
@@ -95,7 +115,9 @@ export default function TransactionHistory() {
                 ? "default"
                 : "outline"
             }
-            onClick={() => setFilter("expense")}
+            onClick={() =>
+              setFilter("expense")
+            }
           >
             Expense
           </Button>
@@ -143,10 +165,15 @@ export default function TransactionHistory() {
                           : "bg-red-100 text-red-600"
                       }`}
                     >
-                      {tx.type === "income" ? (
-                        <ArrowDownLeft size={18} />
+                      {tx.type ===
+                      "income" ? (
+                        <ArrowDownLeft
+                          size={18}
+                        />
                       ) : (
-                        <ArrowUpRight size={18} />
+                        <ArrowUpRight
+                          size={18}
+                        />
                       )}
                     </div>
 
@@ -163,19 +190,25 @@ export default function TransactionHistory() {
                 </td>
 
                 <td className="text-sm text-slate-500">
-                  {formatDate(tx.createdAt)}
+                  {formatDate(
+                    tx.createdAt
+                  )}
                 </td>
 
                 <td>
                   {tx.status ===
                   "completed" ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
-                      <CheckCircle2 size={14} />
+                      <CheckCircle2
+                        size={14}
+                      />
                       Completed
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-1 rounded-full bg-yellow-100 px-3 py-1 text-xs font-medium text-yellow-700">
-                      <Clock3 size={14} />
+                      <Clock3
+                        size={14}
+                      />
                       Pending
                     </span>
                   )}
@@ -183,14 +216,17 @@ export default function TransactionHistory() {
 
                 <td
                   className={`text-right font-semibold ${
-                    tx.type === "income"
+                    tx.type ===
+                    "income"
                       ? "text-green-600"
                       : "text-red-500"
                   }`}
                 >
-                  {tx.type === "income"
+                  {tx.type ===
+                  "income"
                     ? "+"
                     : "-"}
+
                   {formatCurrency(
                     Math.abs(tx.amount)
                   )}{" "}
@@ -209,17 +245,18 @@ export default function TransactionHistory() {
               </tr>
             ))}
 
-            {filteredTransactions.length ===
-              0 && (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="py-10 text-center text-slate-500"
-                >
-                  No transactions found.
-                </td>
-              </tr>
-            )}
+            {!loading &&
+              filteredTransactions.length ===
+                0 && (
+                <tr>
+                  <td
+                    colSpan={5}
+                    className="py-12 text-center text-slate-500"
+                  >
+                    No transactions found.
+                  </td>
+                </tr>
+              )}
           </tbody>
         </table>
       </div>
