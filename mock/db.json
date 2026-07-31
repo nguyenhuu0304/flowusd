@@ -3,7 +3,16 @@
     "id": 1,
     "address": "0x7eB1F8F0C8B9e1234567890ABCDE123456789ABC",
     "balance": 12450.75,
-    "currency": "USDC"
+    "currency": "USDC",
+    "balances": {
+      "EURC": 500,
+      "USDT": 0
+    },
+    "lending": {
+      "deposited": 2000,
+      "apy": 4.5,
+      "since": "2026-07-15T00:00:00Z"
+    }
   },
   "transactions": [
     {

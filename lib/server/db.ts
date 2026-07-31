@@ -21,6 +21,12 @@ export type StoredWallet = {
   address: string;
   balance: number;
   currency: string;
+  balances: Record<string, number>;
+  lending: {
+    deposited: number;
+    apy: number;
+    since: string | null;
+  };
 };
 
 export type StoredTransaction = {
@@ -41,10 +47,20 @@ export type StoredUser = {
   password: string;
 };
 
+export type PendingRegistration = {
+  name: string;
+  email: string;
+  password: string;
+  code: string;
+  expiresAt: number;
+  attempts: number;
+};
+
 type Db = {
   wallet: StoredWallet;
   transactions: StoredTransaction[];
   users: StoredUser[];
+  pendingRegistrations: Map<string, PendingRegistration>;
 };
 
 declare global {
@@ -54,7 +70,15 @@ declare global {
 function seedDb(): Db {
   // Deep-clone the bundled seed data so repeated resets (e.g. in dev,
   // where this module can be re-evaluated) never mutate the imported JSON.
-  return JSON.parse(JSON.stringify(seed)) as Db;
+  const cloned = JSON.parse(JSON.stringify(seed)) as Omit<
+    Db,
+    "pendingRegistrations"
+  >;
+
+  return {
+    ...cloned,
+    pendingRegistrations: new Map(),
+  };
 }
 
 export function getDb(): Db {

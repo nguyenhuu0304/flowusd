@@ -12,6 +12,8 @@ const menus = [
   { title: "Wallet", href: "/wallet", icon: "👛" },
   { title: "Send", href: "/send", icon: "💸" },
   { title: "Receive", href: "/receive", icon: "📥" },
+  { title: "Swap", href: "/swap", icon: "🔄" },
+  { title: "Earn", href: "/earn", icon: "📈" },
   { title: "Transactions", href: "/transactions", icon: "📄" },
 ];
 

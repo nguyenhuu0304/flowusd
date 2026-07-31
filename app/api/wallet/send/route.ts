@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, type StoredTransaction } from "@/lib/server/db";
+import { serializeWallet } from "@/lib/server/finance";
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
@@ -48,5 +49,5 @@ export async function POST(request: NextRequest) {
 
   db.transactions.unshift(transaction);
 
-  return NextResponse.json({ wallet: db.wallet, transaction });
+  return NextResponse.json({ wallet: serializeWallet(db.wallet), transaction });
 }

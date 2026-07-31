@@ -112,6 +112,30 @@ export default function Web3WalletCard() {
         </div>
       </div>
 
+      <div className="mb-6 flex gap-2 rounded-xl bg-slate-100 p-1">
+        <button
+          className="flex-1 rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm"
+          disabled
+        >
+          Arc Testnet
+        </button>
+
+        <button
+          onClick={() =>
+            toast.info("Arc Mainnet isn't live yet", {
+              description:
+                "Circle hasn't launched Arc Mainnet publicly yet — this option will turn on here once it does.",
+            })
+          }
+          className="flex-1 rounded-lg px-4 py-2 text-sm font-medium text-slate-400 transition hover:text-slate-600"
+        >
+          Arc Mainnet
+          <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-500">
+            Soon
+          </span>
+        </button>
+      </div>
+
       {!discoveryDone && !isMetaMaskAvailable ? (
         <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
           Detecting installed wallets...

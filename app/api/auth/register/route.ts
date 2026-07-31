@@ -1,23 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb, type StoredUser } from "@/lib/server/db";
-import { publicUser, fakeToken } from "@/lib/server/auth";
+import { getDb } from "@/lib/server/db";
+import { generateVerificationCode, sendVerificationEmail } from "@/lib/server/email";
+
+const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
-  const { name, email, password } = body ?? {};
+  const { name, email, password, confirmPassword } = body ?? {};
 
-  if (!name || !email || !password) {
+  if (!name || !email || !password || !confirmPassword) {
     return NextResponse.json(
-      { message: "Name, email and password are required." },
+      { message: "Name, email, password and confirm password are required." },
+      { status: 400 }
+    );
+  }
+
+  if (password !== confirmPassword) {
+    return NextResponse.json(
+      { message: "Passwords do not match." },
+      { status: 400 }
+    );
+  }
+
+  if (String(password).length < 6) {
+    return NextResponse.json(
+      { message: "Password must be at least 6 characters." },
       { status: 400 }
     );
   }
 
   const db = getDb();
+  const normalizedEmail = String(email).toLowerCase();
 
-  const exists = db.users.some(
-    (u) => u.email.toLowerCase() === String(email).toLowerCase()
-  );
+  const exists = db.users.some((u) => u.email.toLowerCase() === normalizedEmail);
 
   if (exists) {
     return NextResponse.json(
@@ -26,17 +41,30 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const user: StoredUser = {
-    id: `user_${Date.now()}`,
+  const code = generateVerificationCode();
+
+  db.pendingRegistrations.set(normalizedEmail, {
     name,
     email,
-    password, // demo-only in-memory store: never do this in a real backend
-  };
+    password,
+    code,
+    expiresAt: Date.now() + CODE_TTL_MS,
+    attempts: 0,
+  });
 
-  db.users.push(user);
+  try {
+    await sendVerificationEmail(email, name, code);
+  } catch (error) {
+    db.pendingRegistrations.delete(normalizedEmail);
+
+    const message =
+      error instanceof Error ? error.message : "Could not send verification email.";
+
+    return NextResponse.json({ message }, { status: 502 });
+  }
 
   return NextResponse.json(
-    { user: publicUser(user), token: fakeToken(user.id) },
-    { status: 201 }
+    { pendingEmail: email },
+    { status: 200 }
   );
 }

@@ -30,16 +30,20 @@ Built for developers, creators, and businesses.
 Current:
 
 - Modern Landing Page
-- Email/password authentication (register, login, persisted session)
+- Email/password authentication with **email verification codes** (register
+  → confirm password → 6-digit code emailed via Resend → account created)
 - Wallet balance + address (backed by bundled demo API routes, in-memory data)
 - Send USDC (deducts balance, records a transaction)
 - Receive USDC (address + QR code)
+- **Swap** — convert between demo USDC/EURC/USDT balances (simulated rates)
+- **Earn (Lending)** — deposit USDC to earn a simulated fixed APY
 - Transaction history, search/filter, and detail view
 - Dashboard overview (real stats derived from transaction data)
 - **Real wallet connection (MetaMask, Arc Testnet)** — connects an actual
   wallet, reads your real testnet USDC balance, and sends a real (testnet)
   on-chain transfer. No private keys ever touch the app; every transaction
-  is signed and confirmed inside the wallet itself.
+  is signed and confirmed inside the wallet itself. A Mainnet option is
+  visible but disabled — Arc Mainnet hasn't launched publicly yet.
 - Responsive UI
 - Open-source architecture
 
@@ -47,6 +51,8 @@ Planned:
 
 - Payment Requests / Payment Links
 - Merchant Tools
+- Real Arc Mainnet support (once Circle launches it publicly)
+- Real Swap/Lending protocol integrations (once stable ones exist on Arc)
 
 ---
 
@@ -160,12 +166,37 @@ Open:
 http://localhost:3000
 ```
 
-Log in with the seeded demo account, or register a new one:
+Log in with the seeded demo account (already verified, skips the email
+step), or register a new one:
 
 ```
 email: demo@flowusd.app
 password: demo1234
 ```
+
+### 📧 Setting up email verification (optional for local dev)
+
+Registering a **new** account requires entering a 6-digit code sent by
+email. You don't have to set anything up to test this locally — without
+an email provider configured, the code is printed to your terminal
+(where `npm run dev` is running) instead of being emailed, so you can
+still complete the flow.
+
+To have it actually send real emails (needed once deployed, if you want
+other people to be able to register):
+
+1. Sign up at **[resend.com](https://resend.com)** (free tier is enough).
+2. Create an API key.
+3. Add it as an environment variable:
+   - Local dev: create `.env.local` in the project root with:
+     ```
+     RESEND_API_KEY=rere_your_key_here
+     ```
+   - Vercel: Project Settings → Environment Variables → add `RESEND_API_KEY`.
+4. Without verifying your own domain in Resend, you can only send to the
+   email address you signed up with — fine for testing, but verify a
+   domain in Resend (and set `EMAIL_FROM`) before relying on this for
+   real users.
 
 > The demo API keeps its data in server memory (seeded from `mock/db.json`), so sending USDC actually updates the balance and transaction history for as long as the server keeps running — it resets on restart. See `lib/server/db.ts` for the "swap this for a real database" notes.
 
@@ -195,8 +226,11 @@ never asks for or stores a private key.
 
 ## ☁️ Deploy to Vercel
 
-The app is set up to deploy on Vercel with **zero configuration** — no
-environment variables, no separate server to stand up.
+The app is set up to deploy on Vercel with **zero required configuration**
+— no environment variables are needed for the app to run, though you can
+optionally add `RESEND_API_KEY` (see the email verification section above)
+so new-account emails actually get delivered instead of only appearing in
+your deployment's function logs.
 
 1. Push this project to a GitHub repository (create one if you haven't:
    `git init && git add . && git commit -m "FlowUSD"`, then push it up).

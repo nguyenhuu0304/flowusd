@@ -2,8 +2,13 @@ import { CURRENCY, NETWORK_NAME } from "@/lib/constants";
 import {
   getWallet as getWalletApi,
   send as sendApi,
+  swap as swapApi,
 } from "@/lib/api/wallet";
-import type { WalletApi } from "@/lib/api/wallet";
+import {
+  depositToLending,
+  withdrawFromLending,
+} from "@/lib/api/lending";
+import type { WalletApi, LendingPosition } from "@/lib/api/wallet";
 
 import type { Transaction } from "@/types/transaction";
 
@@ -13,6 +18,8 @@ export type Wallet = {
   balance: number;
   currency: string;
   network: string;
+  balances: Record<string, number>;
+  lending: LendingPosition;
 };
 
 function mapWallet(wallet: WalletApi): Wallet {
@@ -22,6 +29,8 @@ function mapWallet(wallet: WalletApi): Wallet {
     balance: wallet.balance,
     currency: wallet.currency ?? CURRENCY,
     network: wallet.network ?? NETWORK_NAME,
+    balances: wallet.balances,
+    lending: wallet.lending,
   };
 }
 
@@ -41,4 +50,27 @@ export async function sendMoney(data: {
     wallet: mapWallet(result.wallet),
     transaction: result.transaction,
   };
+}
+
+export async function swapCurrency(data: {
+  from: string;
+  to: string;
+  amount: number;
+}): Promise<{ wallet: Wallet; received: number }> {
+  const result = await swapApi(data);
+
+  return {
+    wallet: mapWallet(result.wallet),
+    received: result.received,
+  };
+}
+
+export async function depositLending(amount: number): Promise<Wallet> {
+  const result = await depositToLending(amount);
+  return mapWallet(result.wallet);
+}
+
+export async function withdrawLending(amount?: number): Promise<Wallet> {
+  const result = await withdrawFromLending(amount);
+  return mapWallet(result.wallet);
 }

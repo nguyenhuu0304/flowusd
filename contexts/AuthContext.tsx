@@ -13,6 +13,8 @@ import {
   login as loginService,
   logout as logoutService,
   register as registerService,
+  verifyRegistration as verifyRegistrationService,
+  resendVerificationCode as resendVerificationCodeService,
   LoginPayload,
   RegisterPayload,
 } from "@/services/auth.service";
@@ -23,7 +25,11 @@ interface AuthContextType {
   loading: boolean;
   initializing: boolean;
   login: (payload: LoginPayload) => Promise<void>;
-  register: (payload: RegisterPayload) => Promise<void>;
+  // Step 1: sends a verification code, returns the email it was sent to.
+  register: (payload: RegisterPayload) => Promise<string>;
+  // Step 2: confirms the code and logs the new account in.
+  verifyRegistration: (email: string, code: string) => Promise<void>;
+  resendVerificationCode: (email: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -70,11 +76,25 @@ export function AuthProvider({
     setLoading(true);
 
     try {
-      const user = await registerService(payload);
+      return await registerService(payload);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function verifyRegistration(email: string, code: string) {
+    setLoading(true);
+
+    try {
+      const user = await verifyRegistrationService(email, code);
       setUser(user);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function resendVerificationCode(email: string) {
+    await resendVerificationCodeService(email);
   }
 
   async function logout() {
@@ -95,6 +115,8 @@ export function AuthProvider({
       initializing,
       login,
       register,
+      verifyRegistration,
+      resendVerificationCode,
       logout,
     }),
     [user, loading, initializing]
