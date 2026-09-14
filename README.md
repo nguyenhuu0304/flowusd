@@ -4,7 +4,7 @@
 
 FlowUSD is an open-source application that demonstrates how to build modern stablecoin payment experiences on the Arc network.
 
-The project focuses on simplicity, developer experience, and real-world payment flows powered by native USDC.
+The project focuses on simplicity, developer experience, and real-world payment flows powered by native USDC — combining a polished fintech-style UI with genuine on-chain functionality where it counts.
 
 ---
 
@@ -16,8 +16,7 @@ Instead of building another wallet, FlowUSD focuses on practical payment experie
 
 - Send USDC
 - Receive payments
-- Payment Links
-- QR Payments
+- Payment Links & QR Payments
 - Transaction Memo
 - Merchant Dashboard
 
@@ -27,32 +26,34 @@ Built for developers, creators, and businesses.
 
 ## 🚀 Features
 
-Current:
+### Live today
 
-- Modern Landing Page
-- Email/password authentication with **email verification codes** (register
-  → confirm password → 6-digit code emailed via Resend → account created)
+- Modern landing page, responsive UI
+- Email/password authentication with **email verification codes** (register → confirm password → 6-digit code emailed via Resend → account created)
 - Wallet balance + address (backed by bundled demo API routes, in-memory data)
 - Send USDC (deducts balance, records a transaction)
 - Receive USDC (address + QR code)
+- **Payment Links** — create a shareable link and QR code to request a payment, with a fixed amount or an open "any amount" request. Anyone with the link can pay it — no login and no wallet address needed on their end.
 - **Swap** — convert between demo USDC/EURC/USDT balances (simulated rates)
 - **Earn (Lending)** — deposit USDC to earn a simulated fixed APY
 - Transaction history, search/filter, and detail view
 - Dashboard overview (real stats derived from transaction data)
-- **Real wallet connection (MetaMask, Arc Testnet)** — connects an actual
-  wallet, reads your real testnet USDC balance, and sends a real (testnet)
-  on-chain transfer. No private keys ever touch the app; every transaction
-  is signed and confirmed inside the wallet itself. A Mainnet option is
-  visible but disabled — Arc Mainnet hasn't launched publicly yet.
-- Responsive UI
-- Open-source architecture
+- **Real wallet connection (MetaMask, Arc Testnet)** — connects an actual wallet, reads your real testnet USDC balance, and sends a real on-chain transfer. No private keys ever touch the app; every transaction is signed and confirmed inside the wallet itself.
 
-Planned:
+### Coming soon (built and tested — pending Arc Mainnet)
 
-- Payment Requests / Payment Links
-- Merchant Tools
-- Real Arc Mainnet support (once Circle launches it publicly)
-- Real Swap/Lending protocol integrations (once stable ones exist on Arc)
+FlowUSD ships **three smart contracts we wrote and deployed ourselves** (see [`/contracts`](./contracts)) — not third-party protocols:
+
+- `FlowUSDPaymentLinks.sol` — an on-chain payment-link registry. Records a request and settles it by moving USDC directly from payer to creator; the contract never custodies funds.
+- `FlowSwapToken.sol` + `FlowUSDSwap.sol` — a minimal, fixed-rate two-way exchange between USDC and a demo token, deployed and controlled by us rather than a random unaudited testnet DEX.
+
+Both were successfully deployed and exercised end-to-end on Arc Testnet during development (real `approve`/`transfer`/swap transactions, confirmed on ArcScan). They're currently switched off in the hosted demo because **Arc Testnet's state was reset ahead of Arc Mainnet's public launch on September 16, 2026**, which took our deployed addresses down along with it. The UI shows a "Coming soon" card for these two sections in the meantime — see [`/contracts/README.md`](./contracts/README.md) for redeploy instructions once Mainnet (or a fresh testnet) is available.
+
+### Planned
+
+- Merchant dashboard & payment analytics
+- Real Arc Mainnet support for the on-chain features above
+- Dark mode
 
 ---
 
@@ -62,6 +63,7 @@ Planned:
 - TypeScript
 - Tailwind CSS v4
 - shadcn/ui
+- Solidity (hand-rolled, dependency-free contract bindings — no ethers.js/viem)
 - Arc
 - Native USDC
 
@@ -73,13 +75,23 @@ Planned:
 flowusd/
 │
 ├── app/
+│   ├── (auth)/            # login, register
+│   ├── (protected)/       # dashboard, wallet, send, receive, payment-links, swap, earn, transactions
+│   ├── api/                # demo backend (in-memory), Next.js route handlers
+│   └── pay/[id]/           # public payment-link page (no login required)
+│
 ├── components/
 │   ├── dashboard/
 │   ├── layout/
 │   ├── marketing/
 │   └── ui/
 │
+├── contracts/              # Solidity source for the on-chain features (see contracts/README.md)
 ├── lib/
+│   ├── api/                 # client-side fetch wrappers
+│   ├── server/               # demo backend logic (auth, db, email, finance)
+│   └── web3/                # wallet connection + contract ABI encoding
+├── hooks/
 ├── public/
 │
 ├── README.md
@@ -112,20 +124,21 @@ flowusd/
 
 ### Sprint 4
 
-- [ ] Send USDC
-- [ ] Receive Payments
-- [ ] Transaction Memo
+- [x] Send USDC
+- [x] Receive Payments
+- [x] Transaction Memo
 
 ### Sprint 5
 
-- [ ] Payment Links
-- [ ] QR Payments
-- [ ] Payment Requests
+- [x] Payment Links
+- [x] QR Payments
+- [x] Payment Requests
+- [x] On-chain payment-link registry contract (deployed + tested on Testnet; re-enabling post-Mainnet)
 
 ### Sprint 6
 
+- [x] Transaction History
 - [ ] Merchant Dashboard
-- [ ] Transaction History
 - [ ] Analytics
 
 ### Sprint 7
@@ -142,6 +155,7 @@ Clone the repository:
 
 ```bash
 git clone https://github.com/nguyenhuu0304/flowusd.git
+cd flowusd
 ```
 
 Install dependencies:
@@ -222,6 +236,22 @@ one is fake balance/data from `mock/db.json`; this one is a real testnet
 blockchain. No production/mainnet funds are ever involved, and the app
 never asks for or stores a private key.
 
+### 📜 Re-enabling the on-chain Payment Links / Swap contracts
+
+These ship fully coded and were verified working on Arc Testnet, but are
+switched off by default (see "Coming soon" above). To turn them back on
+once you have a live network to deploy to, see **[`contracts/README.md`](./contracts/README.md)**
+for the full Remix deployment walkthrough, then set:
+
+```
+NEXT_PUBLIC_PAYMENT_LINKS_CONTRACT_ADDRESS=0xyour_deployed_address
+NEXT_PUBLIC_SWAP_CONTRACT_ADDRESS=0xyour_deployed_address
+NEXT_PUBLIC_SWAP_TOKEN_ADDRESS=0xyour_deployed_address
+```
+
+in `.env.local`, then restart `npm run dev`. Each card checks for its own
+address and only renders once configured — no code changes needed.
+
 ---
 
 ## ☁️ Deploy to Vercel
@@ -279,5 +309,3 @@ This project will be released under the MIT License.
 ## ❤️ Built for Arc
 
 FlowUSD is an independent open-source project created to explore modern USDC payment experiences on Arc.
-
-This project is not an official Arc product.
