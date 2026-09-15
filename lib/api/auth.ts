@@ -13,6 +13,7 @@ export type AuthResponse = {
 
 export type RegisterResponse = {
   pendingEmail: string;
+  pendingToken: string;
 };
 
 export async function login(data: { email: string; password: string }) {
@@ -24,7 +25,8 @@ export async function login(data: { email: string; password: string }) {
 
 // Step 1 of registration: validates the details and emails a 6-digit
 // verification code. The account isn't created yet — call
-// verifyRegistration() with that code to finish.
+// verifyRegistration() with that code (and the returned pendingToken) to
+// finish.
 export async function register(data: {
   name: string;
   email: string;
@@ -38,10 +40,13 @@ export async function register(data: {
 }
 
 // Step 2 of registration: confirms the emailed code and actually creates
-// the account, returning a session just like login().
+// the account, returning a session just like login(). pendingToken is
+// the one returned from register() (or the latest one from
+// resendVerificationCode(), if that was called since).
 export async function verifyRegistration(data: {
   email: string;
   code: string;
+  pendingToken: string;
 }) {
   return api<AuthResponse>("/auth/verify", {
     method: "POST",
@@ -49,8 +54,11 @@ export async function verifyRegistration(data: {
   });
 }
 
-export async function resendVerificationCode(data: { email: string }) {
-  return api<{ success: boolean }>("/auth/resend-code", {
+export async function resendVerificationCode(data: {
+  email: string;
+  pendingToken: string;
+}) {
+  return api<{ success: boolean; pendingToken: string }>("/auth/resend-code", {
     method: "POST",
     body: JSON.stringify(data),
   });

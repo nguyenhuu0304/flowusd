@@ -1,35 +1,46 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "@/lib/server/db";
 import { generateVerificationCode, sendVerificationEmail } from "@/lib/server/email";
+import { decodePendingToken, encodePendingToken } from "@/lib/server/pendingToken";
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
-  const { email } = body ?? {};
+  const { email, pendingToken } = body ?? {};
 
-  if (!email) {
-    return NextResponse.json({ message: "Email is required." }, { status: 400 });
+  if (!email || !pendingToken) {
+    return NextResponse.json(
+      { message: "Email and pendingToken are required." },
+      { status: 400 }
+    );
   }
 
-  const db = getDb();
-  const normalizedEmail = String(email).toLowerCase();
-  const pending = db.pendingRegistrations.get(normalizedEmail);
+  const pending = decodePendingToken(pendingToken);
 
   if (!pending) {
     return NextResponse.json(
       {
         message:
-          "No pending registration found for this email. Please register again.",
+          "This verification link is invalid. Please register again.",
       },
       { status: 404 }
     );
   }
 
+  if (pending.email.toLowerCase() !== String(email).toLowerCase()) {
+    return NextResponse.json(
+      { message: "This code was issued for a different email address." },
+      { status: 400 }
+    );
+  }
+
   const code = generateVerificationCode();
-  pending.code = code;
-  pending.expiresAt = Date.now() + CODE_TTL_MS;
-  pending.attempts = 0;
+
+  const newPendingToken = encodePendingToken({
+    ...pending,
+    code,
+    expiresAt: Date.now() + CODE_TTL_MS,
+  });
 
   try {
     await sendVerificationEmail(pending.email, pending.name, code);
@@ -40,5 +51,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ message }, { status: 502 });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, pendingToken: newPendingToken });
 }

@@ -27,7 +27,8 @@ interface AuthContextType {
   login: (payload: LoginPayload) => Promise<void>;
   // Step 1: sends a verification code, returns the email it was sent to.
   register: (payload: RegisterPayload) => Promise<string>;
-  // Step 2: confirms the code and logs the new account in.
+  // Step 2: confirms the code and logs the new account in. Uses the
+  // pendingToken tracked internally since register()/resendVerificationCode().
   verifyRegistration: (email: string, code: string) => Promise<void>;
   resendVerificationCode: (email: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -43,6 +44,14 @@ export function AuthProvider({
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
+
+  // Holds the current opaque registration token between the "sent a
+  // code" and "confirm the code" steps (and gets refreshed on resend).
+  // See lib/server/pendingToken.ts for why this replaced a server-side
+  // in-memory store: server memory isn't reliably shared across
+  // serverless invocations, but this token round-trips through the
+  // browser instead, so any instance can validate it.
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
 
   // Restore a previously logged-in session (if any) so a page refresh
   // doesn't kick the user back out to /login. This runs in an effect
@@ -76,25 +85,44 @@ export function AuthProvider({
     setLoading(true);
 
     try {
-      return await registerService(payload);
+      const { pendingEmail, pendingToken } = await registerService(payload);
+      setPendingToken(pendingToken);
+      return pendingEmail;
     } finally {
       setLoading(false);
     }
   }
 
   async function verifyRegistration(email: string, code: string) {
+    if (!pendingToken) {
+      throw new Error(
+        "This verification link is invalid. Please register again."
+      );
+    }
+
     setLoading(true);
 
     try {
-      const user = await verifyRegistrationService(email, code);
+      const user = await verifyRegistrationService(email, code, pendingToken);
       setUser(user);
+      setPendingToken(null);
     } finally {
       setLoading(false);
     }
   }
 
   async function resendVerificationCode(email: string) {
-    await resendVerificationCodeService(email);
+    if (!pendingToken) {
+      throw new Error(
+        "This verification link is invalid. Please register again."
+      );
+    }
+
+    const newPendingToken = await resendVerificationCodeService(
+      email,
+      pendingToken
+    );
+    setPendingToken(newPendingToken);
   }
 
   async function logout() {
@@ -119,7 +147,7 @@ export function AuthProvider({
       resendVerificationCode,
       logout,
     }),
-    [user, loading, initializing]
+    [user, loading, initializing, pendingToken]
   );
 
   return (

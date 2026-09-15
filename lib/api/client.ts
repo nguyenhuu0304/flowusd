@@ -21,7 +21,24 @@ export async function api<T>(
   });
 
   if (!res.ok) {
-    throw new Error(await res.text());
+    const text = await res.text();
+
+    // API routes return { message: "..." } on error — surface just that
+    // clean text instead of the raw JSON blob. Falls back to the raw
+    // text for anything that isn't shaped that way (e.g. a proxy's HTML
+    // error page).
+    let message = text;
+
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.message === "string") {
+        message = parsed.message;
+      }
+    } catch {
+      // Response body wasn't JSON — keep the raw text as-is.
+    }
+
+    throw new Error(message || `Request failed with status ${res.status}`);
   }
 
   return (await res.json()) as T;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/server/db";
 import { generateVerificationCode, sendVerificationEmail } from "@/lib/server/email";
+import { encodePendingToken } from "@/lib/server/pendingToken";
 
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
@@ -43,20 +44,20 @@ export async function POST(request: NextRequest) {
 
   const code = generateVerificationCode();
 
-  db.pendingRegistrations.set(normalizedEmail, {
+  // Encrypted into the token instead of an in-memory Map, so this works
+  // the same whether /verify happens to land on this exact server
+  // instance or a different one (see lib/server/pendingToken.ts).
+  const pendingToken = encodePendingToken({
     name,
     email,
     password,
     code,
     expiresAt: Date.now() + CODE_TTL_MS,
-    attempts: 0,
   });
 
   try {
     await sendVerificationEmail(email, name, code);
   } catch (error) {
-    db.pendingRegistrations.delete(normalizedEmail);
-
     const message =
       error instanceof Error ? error.message : "Could not send verification email.";
 
@@ -64,7 +65,7 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json(
-    { pendingEmail: email },
+    { pendingEmail: email, pendingToken },
     { status: 200 }
   );
 }

@@ -58,21 +58,11 @@ export type StoredUser = {
   password: string;
 };
 
-export type PendingRegistration = {
-  name: string;
-  email: string;
-  password: string;
-  code: string;
-  expiresAt: number;
-  attempts: number;
-};
-
 type Db = {
   wallet: StoredWallet;
   transactions: StoredTransaction[];
   paymentLinks: StoredPaymentLink[];
   users: StoredUser[];
-  pendingRegistrations: Map<string, PendingRegistration>;
 };
 
 declare global {
@@ -84,7 +74,7 @@ function seedDb(): Db {
   // where this module can be re-evaluated) never mutate the imported JSON.
   const cloned = JSON.parse(JSON.stringify(seed)) as Omit<
     Db,
-    "pendingRegistrations" | "paymentLinks"
+    "paymentLinks"
   > & { paymentLinks?: StoredPaymentLink[] };
 
   return {
@@ -92,7 +82,6 @@ function seedDb(): Db {
     // mock/db.json doesn't ship any seed payment links — the feature
     // starts empty and people create links from the app.
     paymentLinks: cloned.paymentLinks ?? [],
-    pendingRegistrations: new Map(),
   };
 }
 

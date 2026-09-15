@@ -35,26 +35,40 @@ export async function login(payload: LoginPayload): Promise<User> {
 }
 
 // Step 1: sends a verification code to the given email. Returns the email
-// the code was sent to (the account doesn't exist yet).
-export async function register(payload: RegisterPayload): Promise<string> {
-  const { pendingEmail } = await registerApi(payload);
-  return pendingEmail;
+// and an opaque pendingToken to pass to verifyRegistration()/
+// resendVerificationCode() — the account doesn't exist yet.
+export async function register(
+  payload: RegisterPayload
+): Promise<{ pendingEmail: string; pendingToken: string }> {
+  const { pendingEmail, pendingToken } = await registerApi(payload);
+  return { pendingEmail, pendingToken };
 }
 
 // Step 2: confirms the code and actually creates + logs in the account.
 export async function verifyRegistration(
   email: string,
-  code: string
+  code: string,
+  pendingToken: string
 ): Promise<User> {
-  const { user, token } = await verifyRegistrationApi({ email, code });
+  const { user, token } = await verifyRegistrationApi({
+    email,
+    code,
+    pendingToken,
+  });
 
   saveSession({ user, token });
 
   return user;
 }
 
-export async function resendVerificationCode(email: string): Promise<void> {
-  await resendVerificationCodeApi({ email });
+// Returns the refreshed pendingToken — callers must hold onto this and
+// use it for the next verifyRegistration() call instead of the old one.
+export async function resendVerificationCode(
+  email: string,
+  pendingToken: string
+): Promise<string> {
+  const result = await resendVerificationCodeApi({ email, pendingToken });
+  return result.pendingToken;
 }
 
 export async function logout(): Promise<void> {
