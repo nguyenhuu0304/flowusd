@@ -19,7 +19,10 @@ export type WalletOption = {
   provider: Eip1193Provider;
 };
 
-const LEGACY_DISCOVERY_TIMEOUT_MS = 200;
+const LEGACY_DISCOVERY_TIMEOUT_MS = 300;
+
+export const FLOWUSD_SELECTED_WALLET_KEY = "flowusd:selected-wallet-uuid";
+export const FLOWUSD_CONNECTED_ADDRESS_KEY = "flowusd:connected-address";
 
 export function useWeb3Wallet() {
   const [discovered, setDiscovered] = useState<Eip6963ProviderDetail[]>([]);
@@ -35,9 +38,12 @@ export function useWeb3Wallet() {
   const [loadingBalance, setLoadingBalance] = useState(false);
   const [sending, setSending] = useState(false);
 
-  // Discover every wallet extension that supports EIP-6963. If none
-  // respond after a short wait, fall back to the legacy window.ethereum
-  // slot (older wallets that don't support EIP-6963 yet).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setSelectedUuid(window.localStorage.getItem(FLOWUSD_SELECTED_WALLET_KEY));
+    setAddress(window.localStorage.getItem(FLOWUSD_CONNECTED_ADDRESS_KEY));
+  }, []);
+
   useEffect(() => {
     const seen = new Map<string, Eip6963ProviderDetail>();
 
@@ -47,9 +53,7 @@ export function useWeb3Wallet() {
     });
 
     const timeout = setTimeout(() => {
-      if (seen.size === 0) {
-        setLegacyFallback(getEthereumProvider());
-      }
+      if (seen.size === 0) setLegacyFallback(getEthereumProvider());
       setDiscoveryDone(true);
     }, LEGACY_DISCOVERY_TIMEOUT_MS);
 
@@ -70,29 +74,30 @@ export function useWeb3Wallet() {
     }
 
     if (legacyFallback) {
-      return [
-        {
-          uuid: "legacy",
-          name: "Browser Wallet",
-          provider: legacyFallback,
-        },
-      ];
+      return [{ uuid: "legacy", name: "Browser Wallet", provider: legacyFallback }];
     }
 
     return [];
   }, [discovered, legacyFallback]);
 
-  const selectedWallet =
-    wallets.find((w) => w.uuid === selectedUuid) ?? null;
-
+  const selectedWallet = wallets.find((w) => w.uuid === selectedUuid) ?? null;
   const needsWalletSelection = wallets.length > 1 && !selectedWallet;
-
   const isOnArcTestnet = chainId === ARC_TESTNET_CHAIN_ID_HEX;
+
+  const persistAddress = useCallback((next: string | null) => {
+    setAddress(next);
+    if (typeof window === "undefined") return;
+
+    if (next) {
+      window.localStorage.setItem(FLOWUSD_CONNECTED_ADDRESS_KEY, next);
+    } else {
+      window.localStorage.removeItem(FLOWUSD_CONNECTED_ADDRESS_KEY);
+    }
+  }, []);
 
   const refreshBalance = useCallback(
     async (provider: Eip1193Provider, addr: string) => {
       setLoadingBalance(true);
-
       try {
         const value = await getUsdcBalance(provider, addr);
         setBalance(value);
@@ -105,33 +110,19 @@ export function useWeb3Wallet() {
     []
   );
 
-  // Once we have an address on the right network, load its balance.
   useEffect(() => {
     if (!address || !isOnArcTestnet || !selectedWallet) return;
-
-    let active = true;
-
-    (async () => {
-      if (active) await refreshBalance(selectedWallet.provider, address);
-    })();
-
-    return () => {
-      active = false;
-    };
+    void refreshBalance(selectedWallet.provider, address);
   }, [address, isOnArcTestnet, selectedWallet, refreshBalance]);
 
-  // React to the user switching accounts/networks from inside their wallet.
   useEffect(() => {
     const provider = selectedWallet?.provider;
     if (!provider?.on) return;
 
     function handleAccountsChanged(...args: unknown[]) {
       const accounts = args[0] as string[];
-      setAddress(accounts.length > 0 ? accounts[0] : null);
-
-      if (accounts.length === 0) {
-        setBalance(null);
-      }
+      persistAddress(accounts.length > 0 ? accounts[0] : null);
+      if (accounts.length === 0) setBalance(null);
     }
 
     function handleChainChanged(...args: unknown[]) {
@@ -145,67 +136,83 @@ export function useWeb3Wallet() {
       provider.removeListener?.("accountsChanged", handleAccountsChanged);
       provider.removeListener?.("chainChanged", handleChainChanged);
     };
-  }, [selectedWallet]);
+  }, [selectedWallet, persistAddress]);
+
+  useEffect(() => {
+    if (!selectedWallet) return;
+
+    let active = true;
+    (async () => {
+      try {
+        const [accounts, currentChain] = await Promise.all([
+          selectedWallet.provider.request({ method: "eth_accounts" }) as Promise<string[]>,
+          selectedWallet.provider.request({ method: "eth_chainId" }) as Promise<string>,
+        ]);
+
+        if (!active) return;
+        setChainId(currentChain);
+        if (accounts[0]) persistAddress(accounts[0]);
+      } catch (error) {
+        console.debug("[wallet] restore failed:", error);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedWallet, persistAddress]);
 
   const connectWith = useCallback(async (wallet: WalletOption) => {
     setSelectedUuid(wallet.uuid);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(FLOWUSD_SELECTED_WALLET_KEY, wallet.uuid);
+    }
+
     setConnecting(true);
 
     try {
       const accounts = await requestAccounts(wallet.provider);
       await ensureArcTestnet(wallet.provider);
 
-      const newChainId = await wallet.provider.request({
-        method: "eth_chainId",
-      });
-
+      const newChainId = await wallet.provider.request({ method: "eth_chainId" });
       setChainId(newChainId as string);
-      setAddress(accounts[0] ?? null);
+      persistAddress(accounts[0] ?? null);
     } catch (error) {
       console.error("[wallet] connectWith failed:", error);
       throw error;
     } finally {
       setConnecting(false);
     }
-  }, []);
+  }, [persistAddress]);
 
-  // Convenience entry point: reuses the already-selected wallet when one
-  // exists (e.g. re-triggering a network switch), otherwise falls back to
-  // the sole detected wallet. When more than one wallet is installed and
-  // none has been chosen yet, the UI should call `connectWith` directly
-  // once the person picks one from the list.
   const connect = useCallback(async () => {
     const target = selectedWallet ?? (wallets.length === 1 ? wallets[0] : null);
 
     if (!target) {
       if (wallets.length === 0) {
-        throw new Error(
-          "No wallet extension found. Install MetaMask to continue."
-        );
+        throw new Error("No wallet extension found. Install MetaMask to continue.");
       }
 
-      throw new Error(
-        "Multiple wallets detected — pick one from the list below."
-      );
+      throw new Error("Multiple wallets detected — pick one from the list below.");
     }
 
     await connectWith(target);
   }, [wallets, selectedWallet, connectWith]);
 
   const disconnect = useCallback(() => {
-    // Wallets don't expose a real "disconnect" API to dapps — this just
-    // resets our own UI state. The wallet extension stays connected until
-    // the user revokes access from within it.
-    setAddress(null);
+    persistAddress(null);
     setBalance(null);
     setSelectedUuid(null);
-  }, []);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(FLOWUSD_SELECTED_WALLET_KEY);
+    }
+  }, [persistAddress]);
 
   const send = useCallback(
     async (to: string, amount: string) => {
-      if (!address || !selectedWallet) {
-        throw new Error("Wallet not connected.");
-      }
+      if (!address || !selectedWallet) throw new Error("Wallet not connected.");
 
       setSending(true);
 
@@ -216,6 +223,7 @@ export function useWeb3Wallet() {
           to,
           amount
         );
+
         await refreshBalance(selectedWallet.provider, address);
         return hash;
       } finally {
