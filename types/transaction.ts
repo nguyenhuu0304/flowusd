@@ -4,6 +4,9 @@ export interface Transaction {
   address: string;
   amount: number;
   type: "income" | "expense";
-  status: "completed" | "pending";
+  status: "completed" | "pending" | "failed";
   createdAt: string;
+  hash?: string;
+  source?: "mock" | "onchain";
+  blockNumber?: number;
 }
