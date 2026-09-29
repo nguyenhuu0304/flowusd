@@ -1,10 +1,27 @@
+
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-import { getEthereumProvider, type Eip1193Provider } from "@/lib/web3/provider";
-import { discoverProviders, type Eip6963ProviderDetail } from "@/lib/web3/discovery";
-import { ARC_TESTNET_CHAIN_ID_HEX } from "@/lib/web3/config";
+import {
+  getEthereumProvider,
+  type Eip1193Provider,
+} from "@/lib/web3/provider";
+
+import {
+  discoverProviders,
+  type Eip6963ProviderDetail,
+} from "@/lib/web3/discovery";
+
+import {
+  ARC_TESTNET_CHAIN_ID_HEX,
+} from "@/lib/web3/config";
+
 import {
   ensureArcTestnet,
   getUsdcBalance,
@@ -21,39 +38,167 @@ export type WalletOption = {
 
 const LEGACY_DISCOVERY_TIMEOUT_MS = 300;
 
-export const FLOWUSD_SELECTED_WALLET_KEY = "flowusd:selected-wallet-uuid";
-export const FLOWUSD_CONNECTED_ADDRESS_KEY = "flowusd:connected-address";
+export const FLOWUSD_SELECTED_WALLET_KEY =
+  "flowusd:selected-wallet-uuid";
+
+export const FLOWUSD_CONNECTED_ADDRESS_KEY =
+  "flowusd:connected-address";
+
+const WALLET_SYNC_EVENT = "flowusd:wallet-sync";
+
+type WalletSyncDetail = {
+  uuid: string | null;
+  address: string | null;
+  chainId: string | null;
+};
+
+function normalizeChainId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+
+  try {
+    return "0x" + BigInt(value).toString(16);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeAddress(value: unknown): string | null {
+  if (
+    typeof value !== "string" ||
+    !/^0x[a-fA-F0-9]{40}$/.test(value)
+  ) {
+    return null;
+  }
+
+  return value;
+}
+
+function readAccounts(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.filter(
+    (item): item is string =>
+      typeof item === "string" &&
+      /^0x[a-fA-F0-9]{40}$/.test(item)
+  );
+}
+
+function publishWalletState(detail: WalletSyncDetail) {
+  if (typeof window === "undefined") return;
+
+  if (detail.uuid) {
+    localStorage.setItem(
+      FLOWUSD_SELECTED_WALLET_KEY,
+      detail.uuid
+    );
+  } else {
+    localStorage.removeItem(
+      FLOWUSD_SELECTED_WALLET_KEY
+    );
+  }
+
+  if (detail.address) {
+    localStorage.setItem(
+      FLOWUSD_CONNECTED_ADDRESS_KEY,
+      detail.address
+    );
+  } else {
+    localStorage.removeItem(
+      FLOWUSD_CONNECTED_ADDRESS_KEY
+    );
+  }
+
+  window.dispatchEvent(
+    new CustomEvent<WalletSyncDetail>(
+      WALLET_SYNC_EVENT,
+      { detail }
+    )
+  );
+}
+
+async function getProviderState(
+  provider: Eip1193Provider
+) {
+  const [accountsResponse, chainResponse] =
+    await Promise.all([
+      provider.request({
+        method: "eth_accounts",
+      }),
+      provider.request({
+        method: "eth_chainId",
+      }),
+    ]);
+
+  const accounts = readAccounts(accountsResponse);
+
+  return {
+    address: accounts[0] ?? null,
+    chainId: normalizeChainId(chainResponse),
+  };
+}
 
 export function useWeb3Wallet() {
-  const [discovered, setDiscovered] = useState<Eip6963ProviderDetail[]>([]);
-  const [legacyFallback, setLegacyFallback] = useState<Eip1193Provider | null>(null);
-  const [discoveryDone, setDiscoveryDone] = useState(false);
+  const [discovered, setDiscovered] =
+    useState<Eip6963ProviderDetail[]>([]);
 
-  const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
-  const [address, setAddress] = useState<string | null>(null);
-  const [chainId, setChainId] = useState<string | null>(null);
-  const [balance, setBalance] = useState<string | null>(null);
+  const [legacyFallback, setLegacyFallback] =
+    useState<Eip1193Provider | null>(null);
 
-  const [connecting, setConnecting] = useState(false);
-  const [loadingBalance, setLoadingBalance] = useState(false);
-  const [sending, setSending] = useState(false);
+  const [discoveryDone, setDiscoveryDone] =
+    useState(false);
 
+  const [selectedUuid, setSelectedUuid] =
+    useState<string | null>(null);
+
+  const [address, setAddress] =
+    useState<string | null>(null);
+
+  const [chainId, setChainId] =
+    useState<string | null>(null);
+
+  const [balance, setBalance] =
+    useState<string | null>(null);
+
+  const [connecting, setConnecting] =
+    useState(false);
+
+  const [loadingBalance, setLoadingBalance] =
+    useState(false);
+
+  const [sending, setSending] =
+    useState(false);
+
+  // Restore only the selected wallet identity.
+  // Never trust a cached address as proof of connection.
   useEffect(() => {
     if (typeof window === "undefined") return;
-    setSelectedUuid(window.localStorage.getItem(FLOWUSD_SELECTED_WALLET_KEY));
-    setAddress(window.localStorage.getItem(FLOWUSD_CONNECTED_ADDRESS_KEY));
+
+    const savedUuid = localStorage.getItem(
+      FLOWUSD_SELECTED_WALLET_KEY
+    );
+
+    setSelectedUuid(savedUuid);
   }, []);
 
+  // Discover injected browser wallets.
   useEffect(() => {
-    const seen = new Map<string, Eip6963ProviderDetail>();
+    const seen =
+      new Map<string, Eip6963ProviderDetail>();
 
-    const stopListening = discoverProviders((detail) => {
-      seen.set(detail.info.uuid, detail);
-      setDiscovered(Array.from(seen.values()));
-    });
+    const stopListening = discoverProviders(
+      (detail) => {
+        seen.set(detail.info.uuid, detail);
+        setDiscovered(Array.from(seen.values()));
+      }
+    );
 
     const timeout = setTimeout(() => {
-      if (seen.size === 0) setLegacyFallback(getEthereumProvider());
+      if (seen.size === 0) {
+        setLegacyFallback(
+          getEthereumProvider()
+        );
+      }
+
       setDiscoveryDone(true);
     }, LEGACY_DISCOVERY_TIMEOUT_MS);
 
@@ -65,44 +210,112 @@ export function useWeb3Wallet() {
 
   const wallets: WalletOption[] = useMemo(() => {
     if (discovered.length > 0) {
-      return discovered.map((d) => ({
-        uuid: d.info.uuid,
-        name: d.info.name,
-        icon: d.info.icon,
-        provider: d.provider,
+      return discovered.map((detail) => ({
+        uuid: detail.info.uuid,
+        name: detail.info.name,
+        icon: detail.info.icon,
+        provider: detail.provider,
       }));
     }
 
     if (legacyFallback) {
-      return [{ uuid: "legacy", name: "Browser Wallet", provider: legacyFallback }];
+      return [
+        {
+          uuid: "legacy",
+          name: "Browser Wallet",
+          provider: legacyFallback,
+        },
+      ];
     }
 
     return [];
   }, [discovered, legacyFallback]);
 
-  const selectedWallet = wallets.find((w) => w.uuid === selectedUuid) ?? null;
-  const needsWalletSelection = wallets.length > 1 && !selectedWallet;
-  const isOnArcTestnet = chainId === ARC_TESTNET_CHAIN_ID_HEX;
+  const selectedWallet =
+    wallets.find(
+      (item) => item.uuid === selectedUuid
+    ) ?? null;
 
-  const persistAddress = useCallback((next: string | null) => {
-    setAddress(next);
-    if (typeof window === "undefined") return;
+  const needsWalletSelection =
+    wallets.length > 1 && !selectedWallet;
 
-    if (next) {
-      window.localStorage.setItem(FLOWUSD_CONNECTED_ADDRESS_KEY, next);
-    } else {
-      window.localStorage.removeItem(FLOWUSD_CONNECTED_ADDRESS_KEY);
-    }
-  }, []);
+  const isOnArcTestnet =
+    normalizeChainId(chainId) ===
+    ARC_TESTNET_CHAIN_ID_HEX;
+
+  const persistAddress = useCallback(
+    (next: string | null) => {
+      const valid = normalizeAddress(next);
+
+      setAddress(valid);
+
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      if (valid) {
+        localStorage.setItem(
+          FLOWUSD_CONNECTED_ADDRESS_KEY,
+          valid
+        );
+      } else {
+        localStorage.removeItem(
+          FLOWUSD_CONNECTED_ADDRESS_KEY
+        );
+      }
+    },
+    []
+  );
 
   const refreshBalance = useCallback(
-    async (provider: Eip1193Provider, addr: string) => {
+    async (
+      provider: Eip1193Provider,
+      addr: string
+    ) => {
       setLoadingBalance(true);
+
       try {
-        const value = await getUsdcBalance(provider, addr);
-        setBalance(value);
+        const state = await getProviderState(
+          provider
+        );
+
+        if (
+          state.chainId !==
+            ARC_TESTNET_CHAIN_ID_HEX ||
+          state.address?.toLowerCase() !==
+            addr.toLowerCase()
+        ) {
+          setBalance(null);
+          return;
+        }
+
+        const value = await getUsdcBalance(
+          provider,
+          addr
+        );
+
+        const latest =
+          await getProviderState(provider);
+
+        if (
+          latest.chainId ===
+            ARC_TESTNET_CHAIN_ID_HEX &&
+          latest.address?.toLowerCase() ===
+            addr.toLowerCase()
+        ) {
+          setBalance(value);
+        } else {
+          setBalance(null);
+        }
       } catch (error) {
-        console.error("Failed to load on-chain USDC balance:", error);
+        setBalance(null);
+
+        console.warn(
+          "[wallet] Balance refresh failed:",
+          error instanceof Error
+            ? error.message
+            : String(error)
+        );
       } finally {
         setLoadingBalance(false);
       }
@@ -110,149 +323,410 @@ export function useWeb3Wallet() {
     []
   );
 
+  // Sync wallet selection and state across
+  // all FlowUSD components in the same tab.
   useEffect(() => {
-    if (!address || !isOnArcTestnet || !selectedWallet) return;
-    void refreshBalance(selectedWallet.provider, address);
-  }, [address, isOnArcTestnet, selectedWallet, refreshBalance]);
+    if (typeof window === "undefined") return;
 
-  useEffect(() => {
-    const provider = selectedWallet?.provider;
-    if (!provider?.on) return;
+    function handleSync(event: Event) {
+      const detail = (
+        event as CustomEvent<WalletSyncDetail>
+      ).detail;
 
-    function handleAccountsChanged(...args: unknown[]) {
-      const accounts = args[0] as string[];
-      persistAddress(accounts.length > 0 ? accounts[0] : null);
-      if (accounts.length === 0) setBalance(null);
+      if (!detail) return;
+
+      setSelectedUuid(detail.uuid);
+      setAddress(
+        normalizeAddress(detail.address)
+      );
+      setChainId(
+        normalizeChainId(detail.chainId)
+      );
+      setBalance(null);
     }
 
-    function handleChainChanged(...args: unknown[]) {
-      setChainId(args[0] as string);
+    function handleStorage(event: StorageEvent) {
+      if (
+        event.key !==
+          FLOWUSD_SELECTED_WALLET_KEY &&
+        event.key !==
+          FLOWUSD_CONNECTED_ADDRESS_KEY
+      ) {
+        return;
+      }
+
+      setSelectedUuid(
+        localStorage.getItem(
+          FLOWUSD_SELECTED_WALLET_KEY
+        )
+      );
+
+      // The provider must verify the address.
+      setAddress(null);
+      setChainId(null);
+      setBalance(null);
     }
 
-    provider.on("accountsChanged", handleAccountsChanged);
-    provider.on("chainChanged", handleChainChanged);
+    window.addEventListener(
+      WALLET_SYNC_EVENT,
+      handleSync
+    );
+
+    window.addEventListener(
+      "storage",
+      handleStorage
+    );
 
     return () => {
-      provider.removeListener?.("accountsChanged", handleAccountsChanged);
-      provider.removeListener?.("chainChanged", handleChainChanged);
-    };
-  }, [selectedWallet, persistAddress]);
+      window.removeEventListener(
+        WALLET_SYNC_EVENT,
+        handleSync
+      );
 
+      window.removeEventListener(
+        "storage",
+        handleStorage
+      );
+    };
+  }, []);
+
+  // Verify the account and chain directly with
+  // the selected provider, not localStorage.
   useEffect(() => {
-    if (!selectedWallet) return;
+    const provider = selectedWallet?.provider;
+
+    if (!provider) {
+      setAddress(null);
+      setChainId(null);
+      setBalance(null);
+      return;
+    }
 
     let active = true;
-    (async () => {
+
+    async function restore() {
       try {
-        const [accounts, currentChain] = await Promise.all([
-          selectedWallet.provider.request({ method: "eth_accounts" }) as Promise<string[]>,
-          selectedWallet.provider.request({ method: "eth_chainId" }) as Promise<string>,
-        ]);
+        const state =
+          await getProviderState(provider!);
 
         if (!active) return;
-        setChainId(currentChain);
-        if (accounts[0]) persistAddress(accounts[0]);
+
+        setAddress(state.address);
+        setChainId(state.chainId);
+        setBalance(null);
       } catch (error) {
-        console.debug("[wallet] restore failed:", error);
+        if (!active) return;
+
+        setAddress(null);
+        setChainId(null);
+        setBalance(null);
+
+        console.debug(
+          "[wallet] Restore failed:",
+          error
+        );
       }
-    })();
+    }
+
+    void restore();
 
     return () => {
       active = false;
     };
-  }, [selectedWallet, persistAddress]);
+  }, [selectedWallet?.provider]);
 
-  const connectWith = useCallback(async (wallet: WalletOption) => {
-    setSelectedUuid(wallet.uuid);
+  // Listen to account and network changes.
+  useEffect(() => {
+    const provider = selectedWallet?.provider;
 
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(FLOWUSD_SELECTED_WALLET_KEY, wallet.uuid);
+    if (!provider?.on || !selectedWallet) {
+      return;
     }
 
-    setConnecting(true);
+    const uuid = selectedWallet.uuid;
+    let active = true;
 
-    try {
-      const accounts = await requestAccounts(wallet.provider);
-      await ensureArcTestnet(wallet.provider);
+    async function synchronize() {
+      try {
+        const state =
+          await getProviderState(provider!);
 
-      const newChainId = await wallet.provider.request({ method: "eth_chainId" });
-      setChainId(newChainId as string);
-      persistAddress(accounts[0] ?? null);
-    } catch (error) {
-      console.error("[wallet] connectWith failed:", error);
-      throw error;
-    } finally {
-      setConnecting(false);
+        if (!active) return;
+
+        setAddress(state.address);
+        setChainId(state.chainId);
+        setBalance(null);
+
+        publishWalletState({
+          uuid,
+          address: state.address,
+          chainId: state.chainId,
+        });
+      } catch (error) {
+        console.error(
+          "[wallet] Synchronization failed:",
+          error
+        );
+      }
     }
-  }, [persistAddress]);
 
-  const connect = useCallback(async () => {
-    const target = selectedWallet ?? (wallets.length === 1 ? wallets[0] : null);
+    function handleAccountsChanged(
+      ..._args: unknown[]
+    ) {
+      setBalance(null);
+      void synchronize();
+    }
 
-    if (!target) {
-      if (wallets.length === 0) {
-        throw new Error("No wallet extension found. Install MetaMask to continue.");
+    function handleChainChanged(
+      ..._args: unknown[]
+    ) {
+      setBalance(null);
+      void synchronize();
+    }
+
+    provider.on(
+      "accountsChanged",
+      handleAccountsChanged
+    );
+
+    provider.on(
+      "chainChanged",
+      handleChainChanged
+    );
+
+    return () => {
+      active = false;
+
+      provider.removeListener?.(
+        "accountsChanged",
+        handleAccountsChanged
+      );
+
+      provider.removeListener?.(
+        "chainChanged",
+        handleChainChanged
+      );
+    };
+  }, [
+    selectedWallet?.provider,
+    selectedWallet?.uuid,
+  ]);
+
+  // Load USDC balance only on Arc Testnet.
+  useEffect(() => {
+    if (
+      !address ||
+      !isOnArcTestnet ||
+      !selectedWallet
+    ) {
+      setBalance(null);
+      return;
+    }
+
+    void refreshBalance(
+      selectedWallet.provider,
+      address
+    );
+  }, [
+    address,
+    isOnArcTestnet,
+    selectedWallet?.provider,
+    refreshBalance,
+  ]);
+
+  const connectWith = useCallback(
+    async (wallet: WalletOption) => {
+      setConnecting(true);
+
+      try {
+        await requestAccounts(
+          wallet.provider
+        );
+
+        await ensureArcTestnet(
+          wallet.provider
+        );
+
+        const state =
+          await getProviderState(
+            wallet.provider
+          );
+
+        if (
+          state.chainId !==
+          ARC_TESTNET_CHAIN_ID_HEX
+        ) {
+          throw new Error(
+            "Please switch to Arc Testnet."
+          );
+        }
+
+        if (!state.address) {
+          throw new Error(
+            "No wallet account is authorized."
+          );
+        }
+
+        setSelectedUuid(wallet.uuid);
+        setChainId(state.chainId);
+        persistAddress(state.address);
+        setBalance(null);
+
+        publishWalletState({
+          uuid: wallet.uuid,
+          address: state.address,
+          chainId: state.chainId,
+        });
+      } catch (error) {
+        console.error(
+          "[wallet] Connection failed:",
+          error
+        );
+
+        throw error;
+      } finally {
+        setConnecting(false);
+      }
+    },
+    [persistAddress]
+  );
+
+  const connect = useCallback(
+    async () => {
+      const target =
+        selectedWallet ??
+        (wallets.length === 1
+          ? wallets[0]
+          : null);
+
+      if (!target) {
+        if (wallets.length === 0) {
+          throw new Error(
+            "No browser wallet detected."
+          );
+        }
+
+        throw new Error(
+          "Multiple wallets detected. Choose a wallet."
+        );
       }
 
-      throw new Error("Multiple wallets detected — pick one from the list below.");
-    }
-
-    await connectWith(target);
-  }, [wallets, selectedWallet, connectWith]);
+      await connectWith(target);
+    },
+    [
+      wallets,
+      selectedWallet,
+      connectWith,
+    ]
+  );
 
   const disconnect = useCallback(() => {
-    persistAddress(null);
-    setBalance(null);
     setSelectedUuid(null);
+    persistAddress(null);
+    setChainId(null);
+    setBalance(null);
 
-    if (typeof window !== "undefined") {
-      window.localStorage.removeItem(FLOWUSD_SELECTED_WALLET_KEY);
-    }
+    publishWalletState({
+      uuid: null,
+      address: null,
+      chainId: null,
+    });
   }, [persistAddress]);
 
   const send = useCallback(
-    async (to: string, amount: string) => {
-      if (!address || !selectedWallet) throw new Error("Wallet not connected.");
+    async (
+      to: string,
+      amount: string
+    ) => {
+      if (!address || !selectedWallet) {
+        throw new Error(
+          "Wallet not connected."
+        );
+      }
 
       setSending(true);
 
       try {
-        const hash = await sendUsdcTransfer(
-          selectedWallet.provider,
-          address,
-          to,
-          amount
+        const provider =
+          selectedWallet.provider;
+
+        const state =
+          await getProviderState(provider);
+
+        if (
+          state.chainId !==
+          ARC_TESTNET_CHAIN_ID_HEX
+        ) {
+          throw new Error(
+            "Switch to Arc Testnet before sending."
+          );
+        }
+
+        if (
+          state.address?.toLowerCase() !==
+          address.toLowerCase()
+        ) {
+          throw new Error(
+            "Wallet account changed. Reconnect before sending."
+          );
+        }
+
+        const hash =
+          await sendUsdcTransfer(
+            provider,
+            address,
+            to,
+            amount
+          );
+
+        void refreshBalance(
+          provider,
+          address
         );
 
-        await refreshBalance(selectedWallet.provider, address);
         return hash;
       } finally {
         setSending(false);
       }
     },
-    [address, selectedWallet, refreshBalance]
+    [
+      address,
+      selectedWallet,
+      refreshBalance,
+    ]
   );
 
   return {
-    isMetaMaskAvailable: wallets.length > 0,
+    isMetaMaskAvailable:
+      wallets.length > 0,
+
     discoveryDone,
     wallets,
     needsWalletSelection,
+
     address,
     chainId,
     isOnArcTestnet,
     balance,
+
     connecting,
     loadingBalance,
     sending,
-    provider: selectedWallet?.provider ?? null,
+
+    provider:
+      selectedWallet?.provider ?? null,
+
     connect,
     connectWith,
     disconnect,
     send,
+
     refreshBalance: () =>
       selectedWallet && address
-        ? refreshBalance(selectedWallet.provider, address)
+        ? refreshBalance(
+            selectedWallet.provider,
+            address
+          )
         : undefined,
   };
 }

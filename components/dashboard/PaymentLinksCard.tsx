@@ -1,6 +1,12 @@
+
 "use client";
 
-import { useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import QRCode from "react-qr-code";
 import { toPng } from "html-to-image";
 import { toast } from "sonner";
@@ -11,244 +17,1025 @@ import {
   ExternalLink,
   Link2,
   QrCode,
+  RefreshCw,
+  Wallet2,
 } from "lucide-react";
 
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
-import StatusBadge from "@/components/ui/StatusBadge";
 
-import { usePaymentLinks } from "@/hooks/usePaymentLinks";
-import { PaymentLinkApi } from "@/lib/api/payment-links";
-import { CURRENCY } from "@/lib/constants";
-import { formatCurrency, formatDate } from "@/lib/format";
-import { copyToClipboard } from "@/lib/utils";
+import { useWeb3Wallet } from "@/hooks/useWeb3Wallet";
+import { useAppearance } from "@/contexts/AppearanceContext";
 
-function getPublicUrl(id: string) {
-  if (typeof window === "undefined") return "";
-  return `${window.location.origin}/pay/${id}`;
-}
+import {
+  createLinkOnChain,
+  generateOnChainLinkId,
+  getLinkOnChain,
+  isPaymentLinksContractConfigured,
+} from "@/lib/web3/paymentLinksContract";
 
-function CreatePaymentLinkForm({
-  onCreated,
-}: {
-  onCreated: (link: PaymentLinkApi) => void;
-}) {
-  const { create, creating } = usePaymentLinks();
+import {
+  PAYMENT_LINKS_CONTRACT_ADDRESS,
+  USDC_DECIMALS,
+  explorerTxUrl,
+} from "@/lib/web3/config";
 
-  const [amount, setAmount] = useState("");
-  const [memo, setMemo] = useState("");
+import { parseUnits, formatUnits } from "@/lib/web3/erc20";
+import { shortenAddress } from "@/lib/utils";
+import type { Eip1193Provider } from "@/lib/web3/provider";
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+type SavedLink = {
+  id: string;
+  creator: string;
+  memo: string;
+  createdAt: string;
+  createHash: string;
+};
 
-    try {
-      const link = await create({
-        amount: amount.trim() === "" ? null : Number(amount),
-        memo: memo.trim() || undefined,
-      });
+type DisplayLink = SavedLink & {
+  amount: bigint;
+  paid: boolean;
+  payer: string;
+  paidAt: bigint;
+};
 
-      onCreated(link);
-      setAmount("");
-      setMemo("");
+type ChainLog = {
+  topics: string[];
+  data: string;
+  transactionHash: string;
+  blockNumber: string;
+  logIndex: string;
+  removed?: boolean;
+};
 
-      toast.success("Payment link created!");
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Could not create the link.";
-      toast.error(message);
-    }
-  }
+const ZERO = "0x0000000000000000000000000000000000000000";
 
+const LINK_CREATED_TOPIC =
+  "0x3c65ae310530c5dfdf6917866728cf7bf65bd8d07cca861ce7cb6679d5212980";
+
+const DEPLOYMENT_TX =
+  "0xde568755de1391c11aefd0f73bd9ff2486f1ca02ce624d025c0b25424cb97d85";
+
+const SCAN_BLOCKS = 2000;
+
+const panelClass =
+  "rounded-2xl border border-slate-200 bg-white text-slate-900 " +
+  "dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100";
+
+const mutedClass =
+  "text-slate-500 dark:text-slate-400";
+
+const outlineButtonClass =
+  "inline-flex items-center justify-center gap-2 rounded-xl " +
+  "border border-slate-300 bg-white px-4 py-2 text-sm font-medium " +
+  "text-slate-700 transition hover:bg-slate-50 " +
+  "dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 " +
+  "dark:hover:bg-slate-700";
+
+function storageKey(address: string) {
   return (
-    <Card className="p-8">
-      <div className="mb-6 flex items-center gap-2">
-        <Link2 size={20} className="text-blue-600" />
-        <h2 className="text-xl font-bold text-slate-900">
-          Create a Payment Link
-        </h2>
-      </div>
-
-      <p className="mb-6 text-sm text-slate-500">
-        Share a link or QR code so anyone can pay you — no wallet address
-        needed on their end. Leave the amount empty to let the payer decide
-        how much to send.
-      </p>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Amount ({CURRENCY}) — optional
-          </label>
-
-          <Input
-            type="number"
-            min="0"
-            step="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="Leave empty for any amount"
-          />
-        </div>
-
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-700">
-            Description — optional
-          </label>
-
-          <Textarea
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            placeholder="What is this payment for?"
-            rows={2}
-          />
-        </div>
-
-        <Button type="submit" disabled={creating} className="w-full justify-center">
-          {creating ? "Creating..." : "Create Link"}
-        </Button>
-      </form>
-    </Card>
+    "flowusd:onchain-links:" +
+    PAYMENT_LINKS_CONTRACT_ADDRESS.toLowerCase() +
+    ":" +
+    address.toLowerCase()
   );
 }
 
-function PaymentLinkRow({ link }: { link: PaymentLinkApi }) {
-  const [copied, setCopied] = useState(false);
-  const [showQr, setShowQr] = useState(false);
-  const qrRef = useRef<HTMLDivElement>(null);
+function readSaved(address: string): SavedLink[] {
+  try {
+    const raw = localStorage.getItem(storageKey(address));
 
-  const url = getPublicUrl(link.id);
+    if (!raw) return [];
 
-  async function handleCopy() {
-    try {
-      await copyToClipboard(url);
-      setCopied(true);
-      toast.success("Link copied!");
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error("Failed to copy link.");
+    const parsed: unknown = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((item): item is SavedLink => {
+      if (!item || typeof item !== "object") return false;
+
+      const data = item as Record<string, unknown>;
+
+      return (
+        typeof data.id === "string" &&
+        /^0x[a-fA-F0-9]{64}$/.test(data.id) &&
+        typeof data.creator === "string" &&
+        typeof data.memo === "string" &&
+        typeof data.createdAt === "string" &&
+        typeof data.createHash === "string"
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+function writeSaved(address: string, links: SavedLink[]) {
+  localStorage.setItem(
+    storageKey(address),
+    JSON.stringify(links)
+  );
+}
+
+function saveLink(address: string, link: SavedLink) {
+  const previous = readSaved(address);
+
+  const updated = [
+    link,
+    ...previous.filter(
+      (item) =>
+        item.id.toLowerCase() !== link.id.toLowerCase()
+    ),
+  ];
+
+  writeSaved(address, updated);
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) =>
+    setTimeout(resolve, ms)
+  );
+}
+
+async function waitForConfirmation(
+  provider: Eip1193Provider,
+  hash: string
+) {
+  for (let attempt = 0; attempt < 45; attempt++) {
+    const receipt = (await provider.request({
+      method: "eth_getTransactionReceipt",
+      params: [hash],
+    })) as { status?: string } | null;
+
+    if (receipt) {
+      if (
+        receipt.status === "0x1" ||
+        receipt.status === "0x01"
+      ) {
+        return;
+      }
+
+      throw new Error(
+        "Transaction failed on-chain: " + hash
+      );
     }
+
+    await sleep(2000);
   }
 
-  async function handleDownloadQr() {
-    if (!qrRef.current) return;
+  throw new Error(
+    "Transaction is not confirmed yet. Check ArcScan: " +
+      hash
+  );
+}
 
-    try {
-      const dataUrl = await toPng(qrRef.current, {
-        cacheBust: true,
-        pixelRatio: 3,
-      });
+function parseAmount(value: string): bigint {
+  const input = value.trim();
 
-      const a = document.createElement("a");
-      a.download = `flowusd-payment-link-${link.id}.png`;
-      a.href = dataUrl;
-      a.click();
-    } catch {
-      toast.error("Failed to download QR Code.");
-    }
+  if (!input) return 0n;
+
+  if (!/^\d+(\.\d{1,6})?$/.test(input)) {
+    throw new Error(
+      "Enter a valid amount with up to 6 decimals."
+    );
+  }
+
+  const result = parseUnits(input, USDC_DECIMALS);
+
+  if (result <= 0n) {
+    throw new Error("Amount must be greater than zero.");
+  }
+
+  return result;
+}
+
+function toBlockHex(block: bigint) {
+  return "0x" + block.toString(16);
+}
+
+function creatorTopic(address: string) {
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    throw new Error("Invalid connected wallet address.");
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 p-5">
+    "0x" +
+    address.slice(2).toLowerCase().padStart(64, "0")
+  );
+}
+
+async function requestWithRetry<T>(
+  provider: Eip1193Provider,
+  method: string,
+  params: unknown[],
+  maxRetries = 4
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return (await provider.request({
+        method,
+        params,
+      })) as T;
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < maxRetries - 1) {
+        await sleep(400 * (attempt + 1) ** 2);
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(method + " failed.");
+}
+
+async function findCreatedLinks(
+  provider: Eip1193Provider,
+  creator: string
+): Promise<SavedLink[]> {
+  const receipt = await requestWithRetry<{
+    blockNumber?: string;
+    status?: string;
+  } | null>(
+    provider,
+    "eth_getTransactionReceipt",
+    [DEPLOYMENT_TX]
+  );
+
+  if (!receipt?.blockNumber) {
+    throw new Error(
+      "Could not determine the deployment block."
+    );
+  }
+
+  const latestHex = await requestWithRetry<string>(
+    provider,
+    "eth_blockNumber",
+    []
+  );
+
+  const latest = BigInt(latestHex);
+  let fromBlock = BigInt(receipt.blockNumber);
+
+  const found = new Map<string, SavedLink>();
+  const topicCreator = creatorTopic(creator);
+
+  while (fromBlock <= latest) {
+    const lastBlock =
+      fromBlock + BigInt(SCAN_BLOCKS - 1);
+
+    const toBlock =
+      lastBlock > latest ? latest : lastBlock;
+
+    const logs = await requestWithRetry<ChainLog[]>(
+      provider,
+      "eth_getLogs",
+      [
+        {
+          address: PAYMENT_LINKS_CONTRACT_ADDRESS,
+          fromBlock: toBlockHex(fromBlock),
+          toBlock: toBlockHex(toBlock),
+          topics: [
+            LINK_CREATED_TOPIC,
+            null,
+            topicCreator,
+          ],
+        },
+      ]
+    );
+
+    for (const log of logs) {
+      if (log.removed) continue;
+      if (log.topics.length !== 3) continue;
+
+      const id = log.topics[1];
+
+      if (!/^0x[a-fA-F0-9]{64}$/.test(id)) {
+        continue;
+      }
+
+      if (
+        !/^0x[a-fA-F0-9]{64}$/.test(
+          log.transactionHash
+        )
+      ) {
+        continue;
+      }
+
+      found.set(id.toLowerCase(), {
+        id,
+        creator,
+        memo: "",
+        createdAt: "",
+        createHash: log.transactionHash,
+      });
+    }
+
+    fromBlock = toBlock + 1n;
+
+    if (fromBlock <= latest) {
+      await sleep(150);
+    }
+  }
+
+  return Array.from(found.values());
+}
+
+function mergeLinks(
+  address: string,
+  onChain: SavedLink[]
+): SavedLink[] {
+  const saved = readSaved(address);
+
+  const savedById = new Map(
+    saved.map((item) => [
+      item.id.toLowerCase(),
+      item,
+    ])
+  );
+
+  const merged = onChain.map((chainLink) => {
+    const local = savedById.get(
+      chainLink.id.toLowerCase()
+    );
+
+    return {
+      ...chainLink,
+      memo: local?.memo || "",
+      createdAt: local?.createdAt || "",
+    };
+  });
+
+  writeSaved(address, merged);
+
+  return merged;
+}
+
+function LinkRow({ link }: { link: DisplayLink }) {
+  const { language, t } = useAppearance();
+  const vi = language === "vi";
+
+  const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+
+  const qrRef = useRef<HTMLDivElement>(null);
+
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    setUrl(
+      `${window.location.origin}/pay/onchain/${link.id}`
+    );
+  }, [link.id]);
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+
+      toast.success(
+        vi
+          ? "Đã sao chép liên kết thanh toán!"
+          : "Payment URL copied!"
+      );
+    } catch {
+      toast.error(
+        vi
+          ? "Không thể sao chép liên kết."
+          : "Could not copy the URL."
+      );
+    }
+  }
+
+  async function downloadQr() {
+    if (!qrRef.current) return;
+
+    try {
+      const image = await toPng(qrRef.current, {
+        pixelRatio: 3,
+        cacheBust: true,
+      });
+
+      const anchor = document.createElement("a");
+      anchor.href = image;
+      anchor.download =
+        `flowusd-${link.id.slice(2, 12)}.png`;
+      anchor.click();
+    } catch {
+      toast.error(
+        vi
+          ? "Không thể tải mã QR."
+          : "Could not download QR Code."
+      );
+    }
+  }
+
+  const amountText =
+    link.amount === 0n
+      ? vi
+        ? "Số tiền tùy chọn"
+        : "Any amount"
+      : `${formatUnits(
+          link.amount,
+          USDC_DECIMALS
+        )} USDC`;
+
+  const locale = vi ? "vi-VN" : "en-US";
+
+  return (
+    <div
+      className={`${panelClass} p-5`}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="font-semibold text-slate-900">
-            {link.memo || "Payment request"}
+        <div className="min-w-0">
+          <p className="font-semibold">
+            {link.memo ||
+              (vi
+                ? "Yêu cầu thanh toán"
+                : "Payment request")}
           </p>
 
-          <p className="mt-1 text-2xl font-bold text-slate-900">
-            {link.amount !== null
-              ? `${formatCurrency(link.amount)} ${CURRENCY}`
-              : "Any amount"}
+          <p className="mt-2 text-2xl font-bold">
+            {amountText}
           </p>
 
-          <p className="mt-1 text-sm text-slate-500">
-            Created {formatDate(link.createdAt)}
+          <p className={`mt-1 text-xs ${mutedClass}`}>
+            {link.createdAt
+              ? `${vi ? "Tạo lúc" : "Created"} ${new Date(
+                  link.createdAt
+                ).toLocaleString(locale)}`
+              : vi
+                ? "Khôi phục từ Arc Testnet"
+                : "Recovered from Arc Testnet"}
           </p>
-
-          {link.status === "paid" && link.paidAt && (
-            <p className="mt-1 text-sm text-emerald-600">
-              Paid {formatDate(link.paidAt)}
-              {link.payerName ? ` by ${link.payerName}` : ""}
-            </p>
-          )}
         </div>
 
-        <StatusBadge status={link.status === "paid" ? "completed" : "pending"} />
-      </div>
-
-      <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-        <code className="break-all text-xs text-slate-600">{url}</code>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-3">
-        <Button variant="outline" onClick={handleCopy} className="flex-1 justify-center">
-          {copied ? <Check size={16} /> : <Copy size={16} />}
-          <span>{copied ? "Copied" : "Copy Link"}</span>
-        </Button>
-
-        <Button
-          variant="outline"
-          onClick={() => setShowQr((v) => !v)}
-          className="flex-1 justify-center"
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+            link.paid
+              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+              : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+          }`}
         >
-          <QrCode size={16} />
-          <span>{showQr ? "Hide QR" : "Show QR"}</span>
-        </Button>
+          {link.paid
+            ? t("paid")
+            : t("unpaid")}
+        </span>
+      </div>
 
-        <a href={url} target="_blank" rel="noopener noreferrer" className="flex-1">
-          <Button variant="outline" className="w-full justify-center">
-            <ExternalLink size={16} />
-            <span>Open</span>
-          </Button>
+      <div className="mt-4 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+        <p className={`mb-1 text-xs ${mutedClass}`}>
+          {vi
+            ? "Mã liên kết trên blockchain"
+            : "On-chain Link ID"}
+        </p>
+
+        <code className="block break-all text-xs text-slate-900 dark:text-slate-100">
+          {link.id}
+        </code>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+        <p className={`mb-1 text-xs ${mutedClass}`}>
+          {vi
+            ? "Đường dẫn thanh toán để chia sẻ"
+            : "Shareable payment URL"}
+        </p>
+
+        <code className="block break-all text-xs text-slate-900 dark:text-slate-100">
+          {url ||
+            (vi
+              ? "Đang chuẩn bị..."
+              : "Preparing URL...")}
+        </code>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <button
+          type="button"
+          className={outlineButtonClass}
+          onClick={copyLink}
+          disabled={!url}
+        >
+          {copied ? (
+            <Check size={15} />
+          ) : (
+            <Copy size={15} />
+          )}
+
+          {copied
+            ? t("copied")
+            : t("copyLink")}
+        </button>
+
+        <button
+          type="button"
+          className={outlineButtonClass}
+          onClick={() =>
+            setShowQr((value) => !value)
+          }
+          disabled={!url}
+        >
+          <QrCode size={15} />
+          {showQr
+            ? t("hideQr")
+            : t("showQr")}
+        </button>
+
+        <a
+          href={url || undefined}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`${outlineButtonClass} ${
+            !url
+              ? "pointer-events-none opacity-50"
+              : ""
+          }`}
+        >
+          <ExternalLink size={15} />
+          {t("open")}
         </a>
       </div>
 
-      {showQr && (
-        <div className="mt-5 flex flex-col items-center gap-3 border-t border-slate-100 pt-5">
+      {showQr && url && (
+        <div className="mt-5 flex flex-col items-center gap-3 border-t border-slate-200 pt-5 dark:border-slate-700">
           <div
             ref={qrRef}
-            className="rounded-2xl border border-slate-200 bg-white p-4"
+            className="bg-white p-4"
           >
-            <QRCode value={url} size={180} bgColor="#ffffff" fgColor="#0f172a" level="M" />
+            <QRCode
+              value={url}
+              size={180}
+            />
           </div>
 
-          <Button variant="outline" onClick={handleDownloadQr}>
-            <Download size={16} />
-            <span>Download QR</span>
-          </Button>
+          <button
+            type="button"
+            className={outlineButtonClass}
+            onClick={downloadQr}
+          >
+            <Download size={15} />
+            {t("downloadQr")}
+          </button>
         </div>
       )}
+
+      <div className={`mt-4 space-y-2 text-xs ${mutedClass}`}>
+        <p>
+          {vi ? "Người tạo" : "Creator"}:{" "}
+          {shortenAddress(link.creator)}
+        </p>
+
+        {link.paid && (
+          <>
+            <p>
+              {vi
+                ? "Người thanh toán"
+                : "Payer"}:{" "}
+              {shortenAddress(link.payer)}
+            </p>
+
+            <p>
+              {vi
+                ? "Thanh toán lúc"
+                : "Paid at"}:{" "}
+              {new Date(
+                Number(link.paidAt) * 1000
+              ).toLocaleString(locale)}
+            </p>
+          </>
+        )}
+
+        <a
+          href={explorerTxUrl(link.createHash)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-blue-600 underline dark:text-blue-400"
+        >
+          {vi
+            ? "Xem giao dịch tạo liên kết"
+            : "View creation transaction"}
+          <ExternalLink size={12} />
+        </a>
+      </div>
     </div>
   );
 }
 
 export default function PaymentLinksCard() {
-  const { links, loading, refetch } = usePaymentLinks();
+  const wallet = useWeb3Wallet();
+
+  const { language, t } = useAppearance();
+  const vi = language === "vi";
+
+  const [amount, setAmount] = useState("");
+  const [memo, setMemo] = useState("");
+
+  const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const [links, setLinks] =
+    useState<DisplayLink[]>([]);
+
+  const [errorMessage, setErrorMessage] =
+    useState("");
+
+  const refreshId = useRef(0);
+
+  const configured =
+    isPaymentLinksContractConfigured();
+
+  const refresh = useCallback(async () => {
+    const currentRequest = ++refreshId.current;
+
+    if (
+      !configured ||
+      !wallet.address ||
+      !wallet.provider ||
+      !wallet.isOnArcTestnet
+    ) {
+      setLinks([]);
+      setErrorMessage("");
+      setLoading(false);
+      return;
+    }
+
+    const address = wallet.address;
+    const provider = wallet.provider;
+
+    setLoading(true);
+    setErrorMessage("");
+
+    try {
+      const chainLinks =
+        await findCreatedLinks(
+          provider,
+          address
+        );
+
+      const merged =
+        mergeLinks(
+          address,
+          chainLinks
+        );
+
+      const results: DisplayLink[] = [];
+
+      for (const item of merged) {
+        const chain = await getLinkOnChain(
+          provider,
+          item.id
+        );
+
+        if (
+          chain.creator.toLowerCase() === ZERO ||
+          chain.creator.toLowerCase() !==
+            address.toLowerCase()
+        ) {
+          continue;
+        }
+
+        results.push({
+          ...item,
+          amount: chain.amount,
+          paid: chain.paid,
+          payer: chain.payer,
+          paidAt: chain.paidAt,
+        });
+      }
+
+      if (currentRequest !== refreshId.current) {
+        return;
+      }
+
+      setLinks(results.reverse());
+    } catch (error) {
+      if (currentRequest !== refreshId.current) {
+        return;
+      }
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Could not load payment links.";
+
+      console.error(
+        "[PaymentLinks] History sync failed:",
+        error
+      );
+
+      setErrorMessage(message);
+      setLinks([]);
+    } finally {
+      if (currentRequest === refreshId.current) {
+        setLoading(false);
+      }
+    }
+  }, [
+    configured,
+    wallet.address,
+    wallet.provider,
+    wallet.isOnArcTestnet,
+  ]);
+
+  useEffect(() => {
+    void refresh();
+
+    return () => {
+      refreshId.current++;
+    };
+  }, [refresh]);
+
+  async function handleCreate(
+    event: React.FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    if (
+      !configured ||
+      !wallet.address ||
+      !wallet.provider ||
+      !wallet.isOnArcTestnet
+    ) {
+      toast.error(
+        vi
+          ? "Vui lòng kết nối ví trên Arc Testnet trước."
+          : "Connect a wallet on Arc Testnet first."
+      );
+      return;
+    }
+
+    setCreating(true);
+
+    try {
+      const amountRaw = parseAmount(amount);
+      const id = generateOnChainLinkId();
+
+      const hash = await createLinkOnChain(
+        wallet.provider,
+        wallet.address,
+        id,
+        amountRaw
+      );
+
+      toast.message(
+        vi
+          ? "Đang chờ blockchain xác nhận..."
+          : "Waiting for blockchain confirmation..."
+      );
+
+      await waitForConfirmation(
+        wallet.provider,
+        hash
+      );
+
+      const chain = await getLinkOnChain(
+        wallet.provider,
+        id
+      );
+
+      if (
+        chain.creator.toLowerCase() !==
+        wallet.address.toLowerCase()
+      ) {
+        throw new Error(
+          "Transaction confirmed, but link verification failed."
+        );
+      }
+
+      saveLink(wallet.address, {
+        id,
+        creator: wallet.address,
+        memo: memo.trim(),
+        createdAt: new Date().toISOString(),
+        createHash: hash,
+      });
+
+      setAmount("");
+      setMemo("");
+
+      await refresh();
+
+      toast.success(
+        vi
+          ? "Đã tạo liên kết thanh toán trên Arc Testnet!"
+          : "Payment link created on Arc Testnet!"
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : vi
+            ? "Không thể tạo liên kết thanh toán."
+            : "Could not create payment link."
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
 
   return (
     <div className="space-y-8">
-      <CreatePaymentLinkForm onCreated={() => refetch()} />
+      <Card className="border border-slate-200 bg-white p-8 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+        <div className="mb-3 flex items-center gap-2">
+          <Link2
+            size={20}
+            className="text-blue-600 dark:text-blue-400"
+          />
 
-      <Card className="p-8">
-        <h2 className="mb-6 text-xl font-bold text-slate-900">
-          Your Payment Links
-        </h2>
+          <h2 className="text-xl font-bold">
+            {t("createPaymentLink")}
+          </h2>
+        </div>
+
+        <p className={`mb-5 text-sm ${mutedClass}`}>
+          {vi
+            ? "Tạo yêu cầu thanh toán USDC để chia sẻ trên Arc Testnet. Mỗi liên kết được ghi nhận trên blockchain."
+            : "Create a shareable USDC payment request on Arc Testnet. Each link is recorded on-chain."}
+        </p>
+
+        {!configured ? (
+          <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+            {vi
+              ? "Chưa cấu hình hợp đồng Payment Links."
+              : "Payment Links contract is not configured."}
+          </p>
+        ) : !wallet.address ? (
+          <div className="space-y-3 rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
+            <p className={`text-sm ${mutedClass}`}>
+              {vi
+                ? "Kết nối ví để tạo liên kết thanh toán."
+                : "Connect your wallet to create payment links."}
+            </p>
+
+            {wallet.needsWalletSelection ? (
+              wallet.wallets.map((option) => (
+                <button
+                  type="button"
+                  className={`${outlineButtonClass} mr-2 mb-2`}
+                  key={option.uuid}
+                  disabled={wallet.connecting}
+                  onClick={() =>
+                    wallet
+                      .connectWith(option)
+                      .catch((error) =>
+                        toast.error(error.message)
+                      )
+                  }
+                >
+                  <Wallet2 size={16} />
+                  {option.name}
+                </button>
+              ))
+            ) : (
+              <button
+                type="button"
+                className={outlineButtonClass}
+                disabled={wallet.connecting}
+                onClick={() =>
+                  wallet.connect().catch((error) =>
+                    toast.error(error.message)
+                  )
+                }
+              >
+                <Wallet2 size={16} />
+                {t("connectWallet")}
+              </button>
+            )}
+          </div>
+        ) : !wallet.isOnArcTestnet ? (
+          <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+            {vi
+              ? "Vui lòng chuyển ví sang Arc Testnet (Chain ID 5042002)."
+              : "Please switch your connected wallet to Arc Testnet (Chain ID 5042002)."}
+          </p>
+        ) : (
+          <form
+            onSubmit={handleCreate}
+            className="space-y-4"
+          >
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                {t("amount")} (USDC)
+              </label>
+
+              <Input
+                type="number"
+                min="0"
+                step="0.000001"
+                value={amount}
+                onChange={(event) =>
+                  setAmount(event.target.value)
+                }
+                placeholder={
+                  vi
+                    ? "Để trống nếu muốn người trả tự nhập số tiền"
+                    : "Leave empty for any amount"
+                }
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
+                {t("description")} ({t("optional")})
+              </label>
+
+              <Textarea
+                rows={2}
+                value={memo}
+                onChange={(event) =>
+                  setMemo(event.target.value)
+                }
+                placeholder={
+                  vi
+                    ? "Khoản thanh toán này dành cho việc gì?"
+                    : "What is this payment for?"
+                }
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={creating}
+              className="w-full justify-center"
+            >
+              {creating
+                ? vi
+                  ? "Đang xác nhận trên Arc Testnet..."
+                  : "Confirming on Arc Testnet..."
+                : t("createLink")}
+            </Button>
+          </form>
+        )}
+      </Card>
+
+      <Card className="border border-slate-200 bg-white p-8 text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-bold">
+            {t("yourPaymentLinks")}
+          </h2>
+
+          <button
+            type="button"
+            className={outlineButtonClass}
+            disabled={
+              loading ||
+              !wallet.address ||
+              !wallet.isOnArcTestnet
+            }
+            onClick={() => void refresh()}
+          >
+            <RefreshCw size={15} />
+            {t("refresh")}
+          </button>
+        </div>
+
+        <p className={`mb-5 text-xs ${mutedClass}`}>
+          {vi
+            ? "Các liên kết được khôi phục từ sự kiện trên Arc Testnet. Trạng thái thanh toán được xác minh trực tiếp trên blockchain."
+            : "Payment links recovered from Arc Testnet blockchain events. Payment statuses are verified on-chain."}
+        </p>
 
         {loading ? (
-          <div className="animate-pulse space-y-4">
-            <div className="h-32 rounded-2xl bg-slate-200" />
-            <div className="h-32 rounded-2xl bg-slate-200" />
+          <p className={`text-sm ${mutedClass}`}>
+            {vi
+              ? "Đang đồng bộ liên kết từ Arc Testnet. Vui lòng đợi..."
+              : "Synchronizing payment links from Arc Testnet. Please wait..."}
+          </p>
+        ) : errorMessage ? (
+          <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+            <p className="font-semibold">
+              {vi
+                ? "Đồng bộ lịch sử blockchain thất bại."
+                : "Blockchain history synchronization failed."}
+            </p>
+
+            <p className="mt-2 break-words">
+              {errorMessage}
+            </p>
+
+            <p className="mt-2">
+              {vi
+                ? "Bạn có thể nhấn Làm mới để thử lại. Không cần thực hiện giao dịch blockchain."
+                : "Please try Refresh. No blockchain transaction is required."}
+            </p>
           </div>
         ) : links.length === 0 ? (
-          <p className="text-slate-500">
-            You haven&apos;t created any payment links yet.
+          <p className={`text-sm ${mutedClass}`}>
+            {t("noLinks")}
           </p>
         ) : (
           <div className="space-y-4">
             {links.map((link) => (
-              <PaymentLinkRow key={link.id} link={link} />
+              <LinkRow
+                key={link.id}
+                link={link}
+              />
             ))}
           </div>
         )}

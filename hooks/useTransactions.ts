@@ -1,96 +1,225 @@
+
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
-import { getTransactions as getMockTransactions } from "@/services/transaction.service";
-import { getArcOnChainTransactions } from "@/lib/api/onchain-transactions";
+import { useWeb3Wallet } from "@/hooks/useWeb3Wallet";
+
+import {
+  getArcOnChainTransactionPage,
+} from "@/lib/api/onchain-transactions";
+
 import type { Transaction } from "@/types/transaction";
-import { FLOWUSD_CONNECTED_ADDRESS_KEY } from "@/hooks/useWeb3Wallet";
 
 export type TransactionDataSource = "onchain" | "mock";
 
-async function loadTransactions(): Promise<{
-  transactions: Transaction[];
-  source: TransactionDataSource;
-}> {
-  const connectedAddress =
-    typeof window !== "undefined"
-      ? window.localStorage.getItem(FLOWUSD_CONNECTED_ADDRESS_KEY)
-      : null;
+function mergeTransactions(
+  existing: Transaction[],
+  incoming: Transaction[]
+): Transaction[] {
+  const unique = new Map<string, Transaction>();
 
-  if (connectedAddress) {
-    try {
-      const onChain = await getArcOnChainTransactions(connectedAddress);
-      return { transactions: onChain, source: "onchain" };
-    } catch (error) {
-      console.error("Failed to load Arc on-chain transactions:", error);
+  for (const transaction of [...existing, ...incoming]) {
+    const key = String(transaction.id);
+
+    if (!unique.has(key)) {
+      unique.set(key, transaction);
     }
   }
 
-  const fallback = await getMockTransactions();
-
-  return {
-    transactions: fallback.map((tx) => ({
-      ...tx,
-      source: "mock" as const,
-    })),
-    source: "mock",
-  };
+  return Array.from(unique.values()).sort(
+    (a, b) =>
+      new Date(b.createdAt).getTime() -
+      new Date(a.createdAt).getTime()
+  );
 }
 
 export function useTransactions() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [source, setSource] = useState<TransactionDataSource>("mock");
-  const [loading, setLoading] = useState(true);
+  const wallet = useWeb3Wallet();
 
-  const refetch = useCallback(async () => {
-    try {
-      const result = await loadTransactions();
-      setTransactions(result.transactions);
-      setSource(result.source);
-      return result.transactions;
-    } catch (error) {
-      console.error("Failed to load transactions:", error);
-      return [];
-    }
-  }, []);
+  const address = wallet.address;
+  const isOnArcTestnet = wallet.isOnArcTestnet;
 
-  useEffect(() => {
-    let active = true;
+  const [transactions, setTransactions] =
+    useState<Transaction[]>([]);
 
-    async function load() {
+  const [source] =
+    useState<TransactionDataSource>("onchain");
+
+  const [loading, setLoading] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+
+  const [error, setError] = useState<string | null>(null);
+
+  const [nextBefore, setNextBefore] =
+    useState<number | null>(null);
+
+  const [hasMore, setHasMore] = useState(false);
+
+  const requestIdRef = useRef(0);
+  const loadingOlderRef = useRef(false);
+
+  const refetch = useCallback(
+    async (): Promise<Transaction[]> => {
+      const requestId = ++requestIdRef.current;
+
+      setTransactions([]);
+      setNextBefore(null);
+      setHasMore(false);
+      setError(null);
+      setLoadingOlder(false);
+      loadingOlderRef.current = false;
+
+      if (!address || !isOnArcTestnet) {
+        setLoading(false);
+        return [];
+      }
+
       setLoading(true);
 
       try {
-        const result = await loadTransactions();
+        const page =
+          await getArcOnChainTransactionPage(address);
 
-        if (active) {
-          setTransactions(result.transactions);
-          setSource(result.source);
+        if (requestId !== requestIdRef.current) {
+          return [];
         }
+
+        const result = mergeTransactions(
+          [],
+          page.transactions
+        );
+
+        setTransactions(result);
+        setNextBefore(page.nextBefore);
+        setHasMore(page.nextBefore !== null);
+
+        return result;
+      } catch (caughtError) {
+        if (requestId !== requestIdRef.current) {
+          return [];
+        }
+
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unable to load Arc transactions.";
+
+        console.error(
+          "[Transactions] Loading failed:",
+          caughtError
+        );
+
+        setTransactions([]);
+        setError(message);
+
+        return [];
       } finally {
-        if (active) setLoading(false);
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
       }
-    }
+    },
+    [address, isOnArcTestnet]
+  );
 
-    void load();
+  const loadOlder = useCallback(
+    async (): Promise<Transaction[]> => {
+      if (
+        !address ||
+        !isOnArcTestnet ||
+        nextBefore === null ||
+        loadingOlderRef.current ||
+        loading
+      ) {
+        return [];
+      }
 
-    function handleFocus() {
-      void load();
-    }
+      const requestId = requestIdRef.current;
 
-    window.addEventListener("focus", handleFocus);
+      loadingOlderRef.current = true;
+      setLoadingOlder(true);
+      setError(null);
+
+      try {
+        const page =
+          await getArcOnChainTransactionPage(
+            address,
+            nextBefore
+          );
+
+        if (requestId !== requestIdRef.current) {
+          return [];
+        }
+
+        setTransactions((previous) =>
+          mergeTransactions(
+            previous,
+            page.transactions
+          )
+        );
+
+        setNextBefore(page.nextBefore);
+        setHasMore(page.nextBefore !== null);
+
+        return page.transactions;
+      } catch (caughtError) {
+        if (requestId !== requestIdRef.current) {
+          return [];
+        }
+
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unable to load older transactions.";
+
+        console.error(
+          "[Transactions] Load older failed:",
+          caughtError
+        );
+
+        setError(message);
+
+        return [];
+      } finally {
+        if (requestId === requestIdRef.current) {
+          loadingOlderRef.current = false;
+          setLoadingOlder(false);
+        }
+      }
+    },
+    [
+      address,
+      isOnArcTestnet,
+      nextBefore,
+      loading,
+    ]
+  );
+
+  useEffect(() => {
+    void refetch();
 
     return () => {
-      active = false;
-      window.removeEventListener("focus", handleFocus);
+      requestIdRef.current++;
     };
-  }, []);
+  }, [refetch]);
 
   return {
     transactions,
     source,
     loading,
+    error,
     refetch,
+
+    // Pagination
+    loadOlder,
+    loadingOlder,
+    hasMore,
+    nextBefore,
   };
 }

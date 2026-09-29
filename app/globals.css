@@ -128,3 +128,57 @@
     @apply font-sans;
   }
 }
+/* FLOWUSD PAYMENT DARK FIX */
+html.dark main .bg-white {
+  background-color: #111827 !important;
+}
+
+html.dark main .bg-slate-50 {
+  background-color: #1e293b !important;
+}
+
+html.dark main .text-slate-900 {
+  color: #f1f5f9 !important;
+}
+
+html.dark main .text-slate-800,
+html.dark main .text-slate-700 {
+  color: #e2e8f0 !important;
+}
+
+html.dark main .text-slate-600,
+html.dark main .text-slate-500,
+html.dark main .text-slate-400 {
+  color: #94a3b8 !important;
+}
+
+html.dark main input,
+html.dark main textarea,
+html.dark main select {
+  background-color: #1e293b !important;
+  color: #f1f5f9 !important;
+  border-color: #475569 !important;
+}
+
+html.dark main input::placeholder,
+html.dark main textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.dark main .border-slate-200,
+html.dark main .border-slate-300 {
+  border-color: #334155 !important;
+}
+
+html.dark main .bg-blue-600 {
+  background-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+html.dark main .bg-emerald-100 {
+  background-color: #064e3b !important;
+}
+
+html.dark main .text-emerald-700 {
+  color: #a7f3d0 !important;
+}
