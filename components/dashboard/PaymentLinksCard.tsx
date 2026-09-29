@@ -478,6 +478,8 @@ export default function PaymentLinksCard() {
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
   const [creating, setCreating] = useState(false);
+  const [restoreInput, setRestoreInput] = useState("");
+  const [restoring, setRestoring] = useState(false);
   const [links, setLinks] = useState<SavedLink[]>([]);
   const [states, setStates] = useState<
     Record<string, ChainState>
@@ -725,6 +727,94 @@ export default function PaymentLinksCard() {
       setSyncing(false);
     }
   }, [address, provider, onArc, configured, vi]);
+  async function handleRestore(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!address || !provider || !onArc || !configured) {
+      toast.error(
+        vi
+          ? "Vui lòng kết nối ví trên Arc Testnet."
+          : "Connect your wallet on Arc Testnet."
+      );
+      return;
+    }
+    if (busyRef.current) return;
+
+    // Accept a raw 32-byte Link ID or a copied /pay/onchain/<id> URL.
+    const raw = restoreInput.trim();
+    const match = raw.match(/^(?:0x[a-fA-F0-9]{64}|https?:\/\/[^\s/]+\/pay\/onchain\/0x[a-fA-F0-9]{64}\/?(?:[?#][^\s]*)?)$/);
+    const id = raw.match(/0x[a-fA-F0-9]{64}/)?.[0];
+    if (!match || !id) {
+      toast.error(
+        vi
+          ? "Nhập Link ID 0x (64 ký tự hex) hoặc URL thanh toán hợp lệ."
+          : "Enter a 32-byte Link ID or a valid payment URL."
+      );
+      return;
+    }
+
+    busyRef.current = true;
+    setRestoring(true);
+    const generation = generationRef.current;
+    try {
+      // Read-only contract call: no wallet signature and no transaction.
+      const chain = await getLinkOnChain(provider, id);
+      if (chain.creator.toLowerCase() === ZERO) {
+        throw new Error(
+          vi ? "Không tìm thấy Link ID trên hợp đồng." : "Link ID does not exist on this contract."
+        );
+      }
+      if (chain.creator.toLowerCase() !== address.toLowerCase()) {
+        throw new Error(
+          vi
+            ? "Link này không thuộc ví đang kết nối. Hãy chọn đúng ví người tạo."
+            : "This link belongs to another creator wallet. Connect that wallet first."
+        );
+      }
+      if (generation !== generationRef.current) return;
+
+      const existing = readSaved(address).find(
+        (link) => link.id.toLowerCase() === id.toLowerCase()
+      );
+      const record: SavedLink = existing ?? {
+        id,
+        creator: chain.creator,
+        memo: "",
+        createdAt: "",
+        createHash: "", // Unknown creation TX: do not invent a hash.
+      };
+      const snapshot: ChainState = {
+        amount: chain.amount.toString(),
+        paid: chain.paid,
+        payer: chain.payer,
+        paidAt: chain.paidAt.toString(),
+        verifiedAt: Date.now(),
+      };
+      const merged = mergeSaved(address, [record]);
+      saveState(address, id, snapshot);
+      setLinks(merged);
+      setStates((old) => ({ ...old, [id.toLowerCase()]: snapshot }));
+      setVerifiedIds((old) =>
+        old.includes(id.toLowerCase()) ? old : [...old, id.toLowerCase()]
+      );
+      setRestoreInput("");
+      setMessage(
+        vi
+          ? "Đã khôi phục và xác minh liên kết trực tiếp từ blockchain."
+          : "Link restored and verified directly from the blockchain."
+      );
+      toast.success(vi ? "Khôi phục thành công!" : "Link restored!");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : vi ? "Không thể khôi phục liên kết." : "Could not restore link."
+      );
+    } finally {
+      busyRef.current = false;
+      setRestoring(false);
+    }
+  }
+
   async function handleCreate(
     event: React.FormEvent<HTMLFormElement>
   ) {
@@ -894,7 +984,7 @@ export default function PaymentLinksCard() {
             </div>
             <button
               type="submit"
-              disabled={creating || syncing || refreshing}
+              disabled={creating || syncing || refreshing || restoring}
               className="w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
             >
               {creating
@@ -919,7 +1009,8 @@ export default function PaymentLinksCard() {
                 !onArc ||
                 syncing ||
                 refreshing ||
-                creating
+                creating ||
+                restoring
               }
               onClick={() => void refreshStatuses()}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-50 dark:border-slate-600"
@@ -940,7 +1031,8 @@ export default function PaymentLinksCard() {
                 !onArc ||
                 syncing ||
                 refreshing ||
-                creating
+                creating ||
+                restoring
               }
               onClick={() => void syncHistory()}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold disabled:opacity-50 dark:border-slate-600"
@@ -961,6 +1053,40 @@ export default function PaymentLinksCard() {
             ? "Liên kết đã lưu xuất hiện ngay. Nhấn Làm mới trạng thái để xác minh Paid/Unpaid trên blockchain."
             : "Saved links appear immediately. Use Refresh Status to verify Paid/Unpaid on-chain."}
         </p>
+        <form
+          onSubmit={handleRestore}
+          className="mb-5 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800"
+        >
+          <label htmlFor="flowusd-restore-id" className="mb-2 block text-sm font-semibold">
+            {vi ? "Khôi phục bằng Link ID" : "Restore by Link ID"}
+          </label>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+            {vi
+              ? "Dán Link ID hoặc URL thanh toán của chính ví đang kết nối. Đọc trực tiếp contract, không cần quét block hoặc ký giao dịch."
+              : "Paste a Link ID or payment URL created by this wallet. Reads the contract directly without block scanning or signing."}
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <input
+              id="flowusd-restore-id"
+              type="text"
+              value={restoreInput}
+              onChange={(event) => setRestoreInput(event.target.value)}
+              placeholder="0x... or https://.../pay/onchain/0x..."
+              autoComplete="off"
+              spellCheck={false}
+              className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white p-3 text-sm text-slate-900 outline-none focus:border-blue-600 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
+            />
+            <button
+              type="submit"
+              disabled={!address || !onArc || !configured || !restoreInput.trim() || creating || syncing || refreshing || restoring}
+              className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+            >
+              {restoring
+                ? vi ? "Đang kiểm tra..." : "Checking..."
+                : vi ? "Khôi phục" : "Restore"}
+            </button>
+          </div>
+        </form>
         {scanCursor !== null && (
           <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
             {vi
