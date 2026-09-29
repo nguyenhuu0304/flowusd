@@ -1,0 +1,292 @@
+﻿FLOWUSD FINAL INTEGRATION REVIEW
+
+========== D:\Projects\flowusd-clean\flowusd-export\app\(protected)\payment-links\page.tsx ==========
+
+import OnChainPaymentLinkCard from "@/components/dashboard/OnChainPaymentLinkCard";
+import PaymentLinksCard from "@/components/dashboard/PaymentLinksCard";
+import PageHeader from "@/components/ui/PageHeader";
+
+export default function PaymentLinksPage() {
+  return (
+    <main className="flex-1 p-8">
+      <div className="mx-auto max-w-3xl space-y-8">
+        <PageHeader
+          title="Payment Links"
+          description="Create shareable links and QR codes to request payments."
+        />
+
+        <PaymentLinksCard />
+        <OnChainPaymentLinkCard />
+      </div>
+    </main>
+  );
+}
+
+========== D:\Projects\flowusd-clean\flowusd-export\app\api\payment-links\route.ts ==========
+
+import { NextRequest, NextResponse } from "next/server";
+import { getDb, type StoredPaymentLink } from "@/lib/server/db";
+
+export async function GET() {
+  const db = getDb();
+
+  // Newest first.
+  const links = [...db.paymentLinks].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  return NextResponse.json(links);
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => null);
+  const { amount, memo } = body ?? {};
+
+  let normalizedAmount: number | null = null;
+
+  // amount is optional: omit it (or pass null) to create an "any amount"
+  // request where the payer types in how much to send.
+  if (amount !== undefined && amount !== null && amount !== "") {
+    const value = Number(amount);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      return NextResponse.json(
+        { message: "Amount must be a positive number, or left empty." },
+        { status: 400 }
+      );
+    }
+
+    normalizedAmount = Math.round(value * 1e6) / 1e6;
+  }
+
+  if (memo !== undefined && typeof memo !== "string") {
+    return NextResponse.json(
+      { message: "Memo must be text." },
+      { status: 400 }
+    );
+  }
+
+  const db = getDb();
+
+  const link: StoredPaymentLink = {
+    id: `pl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    amount: normalizedAmount,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    ...(memo ? { memo } : {}),
+  };
+
+  db.paymentLinks.unshift(link);
+
+  return NextResponse.json(link, { status: 201 });
+}
+
+========== D:\Projects\flowusd-clean\flowusd-export\app\api\payment-links\[id]\route.ts ==========
+
+import { NextResponse } from "next/server";
+import { getDb } from "@/lib/server/db";
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+
+  const db = getDb();
+
+  const link = db.paymentLinks.find((l) => l.id === id);
+
+  if (!link) {
+    return NextResponse.json(
+      { message: "Payment link not found." },
+      { status: 404 }
+    );
+  }
+
+  return NextResponse.json(link);
+}
+
+========== D:\Projects\flowusd-clean\flowusd-export\app\api\payment-links\[id]\pay\route.ts ==========
+
+import { NextRequest, NextResponse } from "next/server";
+import { getDb, type StoredTransaction } from "@/lib/server/db";
+import { serializeWallet } from "@/lib/server/finance";
+
+type Params = {
+  params: Promise<{ id: string }>;
+};
+
+export async function POST(request: NextRequest, { params }: Params) {
+  const { id } = await params;
+
+  const body = await request.json().catch(() => null);
+  const { amount, payerName } = body ?? {};
+
+  const db = getDb();
+
+  const link = db.paymentLinks.find((l) => l.id === id);
+
+  if (!link) {
+    return NextResponse.json(
+      { message: "Payment link not found." },
+      { status: 404 }
+    );
+  }
+
+  if (link.status === "paid") {
+    return NextResponse.json(
+      { message: "This payment link has already been paid." },
+      { status: 409 }
+    );
+  }
+
+  // Fixed-amount links always charge the amount set at creation. Open
+  // links ("any amount") require the payer to specify how much.
+  let value: number;
+
+  if (link.amount !== null) {
+    value = link.amount;
+  } else {
+    value = Number(amount);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      return NextResponse.json(
+        { message: "Amount must be a positive number." },
+        { status: 400 }
+      );
+    }
+
+    value = Math.round(value * 1e6) / 1e6;
+  }
+
+  if (payerName !== undefined && typeof payerName !== "string") {
+    return NextResponse.json(
+      { message: "Payer name must be text." },
+      { status: 400 }
+    );
+  }
+
+  const displayName = (payerName || "").trim() || "Payment link";
+
+  db.wallet.balance = Math.round((db.wallet.balance + value) * 100) / 100;
+
+  const transaction: StoredTransaction = {
+    id: `tx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    name: displayName,
+    address: link.id,
+    amount: value,
+    type: "income",
+    status: "completed",
+    createdAt: new Date().toISOString(),
+    ...(link.memo ? { memo: link.memo } : {}),
+  };
+
+  db.transactions.unshift(transaction);
+
+  link.status = "paid";
+  link.paidAt = transaction.createdAt;
+  if (payerName) link.payerName = displayName;
+
+  return NextResponse.json({
+    wallet: serializeWallet(db.wallet),
+    transaction,
+    paymentLink: link,
+  });
+}
+
+========== D:\Projects\flowusd-clean\flowusd-export\lib\server\db.ts ==========
+
+import seed from "@/mock/db.json";
+
+// A tiny in-memory "database" for the demo API routes.
+//
+// This is intentionally NOT a real database: it exists so the app has
+// something that behaves like a backend without requiring the person
+// deploying it to provision one just to see a working demo. It's good
+// enough to showcase the full login â†’ wallet â†’ send â†’ history flow on a
+// single running instance (e.g. right after a Vercel deploy).
+//
+// Real limitations to know about:
+// - State lives in server memory, so it resets on a cold start / new
+//   deployment, and isn't shared across multiple serverless instances.
+// - For a production app with real users, swap this for an actual
+//   database (Postgres, Vercel KV, etc.) behind the same functions below
+//   â€” nothing above this layer (routes, services, hooks) would need to
+//   change, since they only depend on the shapes exported here.
+
+export type StoredWallet = {
+  id: number;
+  address: string;
+  balance: number;
+  currency: string;
+  balances: Record<string, number>;
+  lending: {
+    deposited: number;
+    apy: number;
+    since: string | null;
+  };
+};
+
+export type StoredTransaction = {
+  id: string;
+  name: string;
+  address: string;
+  amount: number;
+  type: "income" | "expense";
+  status: "completed" | "pending";
+  createdAt: string;
+  memo?: string;
+};
+
+export type StoredPaymentLink = {
+  id: string;
+  // null means the payer chooses how much to pay (open amount request).
+  amount: number | null;
+  memo?: string;
+  status: "pending" | "paid";
+  createdAt: string;
+  paidAt?: string;
+  payerName?: string;
+};
+
+export type StoredUser = {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+};
+
+type Db = {
+  wallet: StoredWallet;
+  transactions: StoredTransaction[];
+  paymentLinks: StoredPaymentLink[];
+  users: StoredUser[];
+};
+
+declare global {
+  var __flowusdDb: Db | undefined;
+}
+
+function seedDb(): Db {
+  // Deep-clone the bundled seed data so repeated resets (e.g. in dev,
+  // where this module can be re-evaluated) never mutate the imported JSON.
+  const cloned = JSON.parse(JSON.stringify(seed)) as Omit<
+    Db,
+    "paymentLinks"
+  > & { paymentLinks?: StoredPaymentLink[] };
+
+  return {
+    ...cloned,
+    // mock/db.json doesn't ship any seed payment links â€” the feature
+    // starts empty and people create links from the app.
+    paymentLinks: cloned.paymentLinks ?? [],
+  };
+}
+
+export function getDb(): Db {
+  if (!global.__flowusdDb) {
+    global.__flowusdDb = seedDb();
+  }
+
+  return global.__flowusdDb;
+}

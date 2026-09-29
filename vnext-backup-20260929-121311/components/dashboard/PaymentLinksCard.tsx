@@ -1111,7 +1111,7 @@ export default function PaymentLinksCard() {
           </p>
         ) : (
           <div className="space-y-4">
-            {[...links].sort((a,b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0)).map((link) => (
+            {links.map((link) => (
               <LinkRow
                 key={link.id}
                 link={link}

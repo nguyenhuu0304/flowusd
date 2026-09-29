@@ -15,10 +15,8 @@ import { useAppearance } from "@/contexts/AppearanceContext";
 
 import PaymentLinksCard from "@/components/dashboard/PaymentLinksCard";
 import TransactionHistory from "@/components/dashboard/TransactionHistory";
-import SplitBillCard from "@/components/dashboard/SplitBillCard";
-import SplitBillBatchCard from "@/components/dashboard/SplitBillBatchCard";
 
-type DashboardTab = "payments" | "transactions" | "split";
+type DashboardTab = "payments" | "transactions";
 
 export default function DashboardContent() {
   const wallet = useWeb3Wallet();
@@ -138,7 +136,7 @@ export default function DashboardContent() {
 
         {/* Dashboard tabs */}
         <div
-          className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+          className="grid grid-cols-2 gap-3"
           role="tablist"
           aria-label={
             language === "vi"
@@ -179,10 +177,6 @@ export default function DashboardContent() {
             <History size={18} />
             {t("transactions")}
           </button>
-          <button type="button" role="tab" aria-selected={activeTab === "split"} onClick={() => setActiveTab("split")}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-4 text-sm font-semibold transition sm:text-base ${activeTab === "split" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"}`}>
-            {language === "vi" ? "Chia hÃ³a Ä‘Æ¡n" : "Split Bill"}
-          </button>
         </div>
 
         {/* Show only the active tab */}
@@ -193,16 +187,10 @@ export default function DashboardContent() {
           >
             <PaymentLinksCard />
           </section>
-        ) : activeTab === "transactions" ? (
-          <section role="tabpanel"><TransactionHistory /></section>
         ) : (
-          <section role="tabpanel"><div className="space-y-6">
-              <SplitBillBatchCard />
-              <details className="rounded-2xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-                <summary className="cursor-pointer font-semibold">Legacy split bills (existing links)</summary>
-                <div className="mt-4"><SplitBillCard /></div>
-              </details>
-            </div></section>
+          <section role="tabpanel">
+            <TransactionHistory />
+          </section>
         )}
 
         <p className="pb-6 text-center text-xs text-slate-400 dark:text-slate-500">

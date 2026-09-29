@@ -1,0 +1,691 @@
+﻿FLOWUSD PAYMENT LINKS INTEGRATION REVIEW
+
+========== lib\api\payment-links.ts ==========
+
+import { api } from "./client";
+import type { TransactionApi } from "./transaction";
+import type { WalletApi } from "./wallet";
+
+export type PaymentLinkApi = {
+  id: string;
+  amount: number | null;
+  memo?: string;
+  status: "pending" | "paid";
+  createdAt: string;
+  paidAt?: string;
+  payerName?: string;
+};
+
+export type PayPaymentLinkResponse = {
+  wallet: WalletApi;
+  transaction: TransactionApi;
+  paymentLink: PaymentLinkApi;
+};
+
+export async function listPaymentLinks() {
+  return api<PaymentLinkApi[]>("/payment-links");
+}
+
+export async function createPaymentLink(data: {
+  amount?: number | null;
+  memo?: string;
+}) {
+  return api<PaymentLinkApi>("/payment-links", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getPaymentLink(id: string) {
+  return api<PaymentLinkApi>(`/payment-links/${id}`);
+}
+
+export async function payPaymentLink(
+  id: string,
+  data: { amount?: number; payerName?: string }
+) {
+  return api<PayPaymentLinkResponse>(`/payment-links/${id}/pay`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+========== lib\web3\config.ts ==========
+
+// Circle's Arc network (https://docs.arc.io) â€” an EVM-compatible L1 where
+// USDC is the native gas token. This app only ever targets Arc **Testnet**:
+// no real money is involved.
+//
+// Reference: https://docs.arc.io/arc/references/contract-addresses
+
+export const ARC_TESTNET_CHAIN_ID_DEC = 5042002;
+export const ARC_TESTNET_CHAIN_ID_HEX = "0x4cef52"; // 5042002 in hex
+
+export const ARC_TESTNET_PARAMS = {
+  chainId: ARC_TESTNET_CHAIN_ID_HEX,
+  chainName: "Arc Testnet",
+  nativeCurrency: {
+    name: "USDC",
+    symbol: "USDC",
+    // The native gas token uses 18 decimals on Arc. We don't use this value
+    // directly for balances/transfers â€” see USDC_DECIMALS below.
+    decimals: 18,
+  },
+  rpcUrls: ["https://rpc.testnet.arc.network"],
+  blockExplorerUrls: ["https://testnet.arcscan.app"],
+};
+
+// Arc's docs recommend integrating against the standard ERC-20 interface for
+// USDC (rather than the native 18-decimal gas balance) for reading balances
+// and sending transfers, since it behaves like any other ERC-20 token.
+export const USDC_CONTRACT_ADDRESS =
+  "0x3600000000000000000000000000000000000000";
+
+export const USDC_DECIMALS = 6;
+
+// The FlowUSD Payment Links registry (see /contracts/FlowUSDPaymentLinks.sol).
+// This is a contract WE deploy ourselves â€” unlike USDC above, there is no
+// canonical address for it. Fill this in after deploying via Remix; the
+// on-chain payment link UI stays hidden until it's set.
+export const PAYMENT_LINKS_CONTRACT_ADDRESS =
+  process.env.NEXT_PUBLIC_PAYMENT_LINKS_CONTRACT_ADDRESS || "";
+
+// FlowUSDSwap + FlowSwapToken (see /contracts/FlowUSDSwap.sol and
+// FlowSwapToken.sol). Also contracts WE deploy ourselves â€” fill these in
+// after deploying via Remix.
+export const SWAP_CONTRACT_ADDRESS =
+  process.env.NEXT_PUBLIC_SWAP_CONTRACT_ADDRESS || "";
+export const SWAP_TOKEN_ADDRESS =
+  process.env.NEXT_PUBLIC_SWAP_TOKEN_ADDRESS || "";
+export const SWAP_TOKEN_SYMBOL = "FST";
+
+export const ARC_FAUCET_URL = "https://faucet.circle.com/";
+export const ARC_EXPLORER_URL = "https://testnet.arcscan.app";
+
+export function explorerAddressUrl(address: string) {
+  return `${ARC_EXPLORER_URL}/address/${address}`;
+}
+
+export function explorerTxUrl(hash: string) {
+  return `${ARC_EXPLORER_URL}/tx/${hash}`;
+}
+
+========== lib\web3\provider.ts ==========
+
+// Minimal typing for an EIP-1193 wallet provider (MetaMask and most other
+// browser wallets inject this at `window.ethereum`). We only type the
+// handful of members this app actually uses.
+
+export type Eip1193RequestArgs = {
+  method: string;
+  params?: unknown[] | Record<string, unknown>;
+};
+
+export interface Eip1193Provider {
+  request(args: Eip1193RequestArgs): Promise<unknown>;
+  on?(event: string, handler: (...args: unknown[]) => void): void;
+  removeListener?(event: string, handler: (...args: unknown[]) => void): void;
+  isMetaMask?: boolean;
+}
+
+declare global {
+  interface Window {
+    ethereum?: Eip1193Provider;
+  }
+}
+
+export function getEthereumProvider(): Eip1193Provider | null {
+  if (typeof window === "undefined") return null;
+  return window.ethereum ?? null;
+}
+
+========== hooks\useWeb3Wallet.ts ==========
+
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+import { getEthereumProvider, type Eip1193Provider } from "@/lib/web3/provider";
+import { discoverProviders, type Eip6963ProviderDetail } from "@/lib/web3/discovery";
+import { ARC_TESTNET_CHAIN_ID_HEX } from "@/lib/web3/config";
+import {
+  ensureArcTestnet,
+  getUsdcBalance,
+  requestAccounts,
+  sendUsdcTransfer,
+} from "@/lib/web3/wallet";
+
+export type WalletOption = {
+  uuid: string;
+  name: string;
+  icon?: string;
+  provider: Eip1193Provider;
+};
+
+const LEGACY_DISCOVERY_TIMEOUT_MS = 300;
+
+export const FLOWUSD_SELECTED_WALLET_KEY = "flowusd:selected-wallet-uuid";
+export const FLOWUSD_CONNECTED_ADDRESS_KEY = "flowusd:connected-address";
+
+export function useWeb3Wallet() {
+  const [discovered, setDiscovered] = useState<Eip6963ProviderDetail[]>([]);
+  const [legacyFallback, setLegacyFallback] = useState<Eip1193Provider | null>(null);
+  const [discoveryDone, setDiscoveryDone] = useState(false);
+
+  const [selectedUuid, setSelectedUuid] = useState<string | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
+  const [chainId, setChainId] = useState<string | null>(null);
+  const [balance, setBalance] = useState<string | null>(null);
+
+  const [connecting, setConnecting] = useState(false);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setSelectedUuid(window.localStorage.getItem(FLOWUSD_SELECTED_WALLET_KEY));
+    setAddress(window.localStorage.getItem(FLOWUSD_CONNECTED_ADDRESS_KEY));
+  }, []);
+
+  useEffect(() => {
+    const seen = new Map<string, Eip6963ProviderDetail>();
+
+    const stopListening = discoverProviders((detail) => {
+      seen.set(detail.info.uuid, detail);
+      setDiscovered(Array.from(seen.values()));
+    });
+
+    const timeout = setTimeout(() => {
+      if (seen.size === 0) setLegacyFallback(getEthereumProvider());
+      setDiscoveryDone(true);
+    }, LEGACY_DISCOVERY_TIMEOUT_MS);
+
+    return () => {
+      stopListening();
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  const wallets: WalletOption[] = useMemo(() => {
+    if (discovered.length > 0) {
+      return discovered.map((d) => ({
+        uuid: d.info.uuid,
+        name: d.info.name,
+        icon: d.info.icon,
+        provider: d.provider,
+      }));
+    }
+
+    if (legacyFallback) {
+      return [{ uuid: "legacy", name: "Browser Wallet", provider: legacyFallback }];
+    }
+
+    return [];
+  }, [discovered, legacyFallback]);
+
+  const selectedWallet = wallets.find((w) => w.uuid === selectedUuid) ?? null;
+  const needsWalletSelection = wallets.length > 1 && !selectedWallet;
+  const isOnArcTestnet = chainId === ARC_TESTNET_CHAIN_ID_HEX;
+
+  const persistAddress = useCallback((next: string | null) => {
+    setAddress(next);
+    if (typeof window === "undefined") return;
+
+    if (next) {
+      window.localStorage.setItem(FLOWUSD_CONNECTED_ADDRESS_KEY, next);
+    } else {
+      window.localStorage.removeItem(FLOWUSD_CONNECTED_ADDRESS_KEY);
+    }
+  }, []);
+
+  const refreshBalance = useCallback(
+    async (provider: Eip1193Provider, addr: string) => {
+      setLoadingBalance(true);
+      try {
+        const value = await getUsdcBalance(provider, addr);
+        setBalance(value);
+      } catch (error) {
+        console.error("Failed to load on-chain USDC balance:", error);
+      } finally {
+        setLoadingBalance(false);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!address || !isOnArcTestnet || !selectedWallet) return;
+    void refreshBalance(selectedWallet.provider, address);
+  }, [address, isOnArcTestnet, selectedWallet, refreshBalance]);
+
+  useEffect(() => {
+    const provider = selectedWallet?.provider;
+    if (!provider?.on) return;
+
+    function handleAccountsChanged(...args: unknown[]) {
+      const accounts = args[0] as string[];
+      persistAddress(accounts.length > 0 ? accounts[0] : null);
+      if (accounts.length === 0) setBalance(null);
+    }
+
+    function handleChainChanged(...args: unknown[]) {
+      setChainId(args[0] as string);
+    }
+
+    provider.on("accountsChanged", handleAccountsChanged);
+    provider.on("chainChanged", handleChainChanged);
+
+    return () => {
+      provider.removeListener?.("accountsChanged", handleAccountsChanged);
+      provider.removeListener?.("chainChanged", handleChainChanged);
+    };
+  }, [selectedWallet, persistAddress]);
+
+  useEffect(() => {
+    if (!selectedWallet) return;
+
+    let active = true;
+    (async () => {
+      try {
+        const [accounts, currentChain] = await Promise.all([
+          selectedWallet.provider.request({ method: "eth_accounts" }) as Promise<string[]>,
+          selectedWallet.provider.request({ method: "eth_chainId" }) as Promise<string>,
+        ]);
+
+        if (!active) return;
+        setChainId(currentChain);
+        if (accounts[0]) persistAddress(accounts[0]);
+      } catch (error) {
+        console.debug("[wallet] restore failed:", error);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedWallet, persistAddress]);
+
+  const connectWith = useCallback(async (wallet: WalletOption) => {
+    setSelectedUuid(wallet.uuid);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(FLOWUSD_SELECTED_WALLET_KEY, wallet.uuid);
+    }
+
+    setConnecting(true);
+
+    try {
+      const accounts = await requestAccounts(wallet.provider);
+      await ensureArcTestnet(wallet.provider);
+
+      const newChainId = await wallet.provider.request({ method: "eth_chainId" });
+      setChainId(newChainId as string);
+      persistAddress(accounts[0] ?? null);
+    } catch (error) {
+      console.error("[wallet] connectWith failed:", error);
+      throw error;
+    } finally {
+      setConnecting(false);
+    }
+  }, [persistAddress]);
+
+  const connect = useCallback(async () => {
+    const target = selectedWallet ?? (wallets.length === 1 ? wallets[0] : null);
+
+    if (!target) {
+      if (wallets.length === 0) {
+        throw new Error("No wallet extension found. Install MetaMask to continue.");
+      }
+
+      throw new Error("Multiple wallets detected â€” pick one from the list below.");
+    }
+
+    await connectWith(target);
+  }, [wallets, selectedWallet, connectWith]);
+
+  const disconnect = useCallback(() => {
+    persistAddress(null);
+    setBalance(null);
+    setSelectedUuid(null);
+
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(FLOWUSD_SELECTED_WALLET_KEY);
+    }
+  }, [persistAddress]);
+
+  const send = useCallback(
+    async (to: string, amount: string) => {
+      if (!address || !selectedWallet) throw new Error("Wallet not connected.");
+
+      setSending(true);
+
+      try {
+        const hash = await sendUsdcTransfer(
+          selectedWallet.provider,
+          address,
+          to,
+          amount
+        );
+
+        await refreshBalance(selectedWallet.provider, address);
+        return hash;
+      } finally {
+        setSending(false);
+      }
+    },
+    [address, selectedWallet, refreshBalance]
+  );
+
+  return {
+    isMetaMaskAvailable: wallets.length > 0,
+    discoveryDone,
+    wallets,
+    needsWalletSelection,
+    address,
+    chainId,
+    isOnArcTestnet,
+    balance,
+    connecting,
+    loadingBalance,
+    sending,
+    provider: selectedWallet?.provider ?? null,
+    connect,
+    connectWith,
+    disconnect,
+    send,
+    refreshBalance: () =>
+      selectedWallet && address
+        ? refreshBalance(selectedWallet.provider, address)
+        : undefined,
+  };
+}
+
+NOT FOUND: app\payment-links\page.tsx
+
+========== app\pay\[id]\page.tsx ==========
+
+"use client";
+
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
+import { toast } from "sonner";
+import { CheckCircle2, Wallet2 } from "lucide-react";
+
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import Input from "@/components/ui/Input";
+
+import { getPaymentLink, payPaymentLink, PaymentLinkApi } from "@/lib/api/payment-links";
+import { CURRENCY } from "@/lib/constants";
+import { formatCurrency, formatDate } from "@/lib/format";
+
+type LoadState = "loading" | "not-found" | "ready";
+
+export default function PayPage() {
+  const params = useParams<{ id: string }>();
+  const id = params.id;
+
+  const [state, setState] = useState<LoadState>("loading");
+  const [link, setLink] = useState<PaymentLinkApi | null>(null);
+
+  const [amount, setAmount] = useState("");
+  const [payerName, setPayerName] = useState("");
+  const [paying, setPaying] = useState(false);
+  const [paidTransactionId, setPaidTransactionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    async function load() {
+      try {
+        const data = await getPaymentLink(id);
+        if (active) {
+          setLink(data);
+          setState("ready");
+        }
+      } catch {
+        if (active) setState("not-found");
+      }
+    }
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  async function handlePay(e: React.FormEvent) {
+    e.preventDefault();
+    if (!link) return;
+
+    setPaying(true);
+
+    try {
+      const result = await payPaymentLink(id, {
+        amount: link.amount === null ? Number(amount) : undefined,
+        payerName: payerName.trim() || undefined,
+      });
+
+      setLink(result.paymentLink);
+      setPaidTransactionId(result.transaction.id);
+
+      toast.success("Payment sent!");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Payment failed. Please try again.";
+      toast.error(message);
+    } finally {
+      setPaying(false);
+    }
+  }
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+      <div className="w-full max-w-md">
+        <div className="mb-8 text-center">
+          <h1 className="text-2xl font-bold text-blue-600">FlowUSD</h1>
+          <p className="mt-1 text-sm text-slate-500">Open-source payments on Arc</p>
+        </div>
+
+        {state === "loading" && (
+          <Card className="p-8 text-center text-slate-500">Loading payment request...</Card>
+        )}
+
+        {state === "not-found" && (
+          <Card className="p-8 text-center">
+            <p className="font-semibold text-slate-900">Payment link not found</p>
+            <p className="mt-2 text-sm text-slate-500">
+              This link may have been mistyped, or no longer exists.
+            </p>
+          </Card>
+        )}
+
+        {state === "ready" && link && (
+          <Card className="p-8">
+            {link.status === "paid" ? (
+              <div className="text-center">
+                <CheckCircle2 size={48} className="mx-auto text-emerald-500" />
+
+                <h2 className="mt-4 text-xl font-bold text-slate-900">
+                  {paidTransactionId ? "Payment successful!" : "This request has been paid"}
+                </h2>
+
+                <p className="mt-2 text-slate-500">
+                  {link.amount !== null
+                    ? `${formatCurrency(link.amount)} ${CURRENCY}`
+                    : "Payment"}{" "}
+                  {link.paidAt ? `on ${formatDate(link.paidAt)}` : ""}
+                </p>
+
+                {link.memo && (
+                  <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                    {link.memo}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="mb-6 text-center">
+                  <Wallet2 size={32} className="mx-auto text-blue-600" />
+
+                  <p className="mt-3 text-sm text-slate-500">Payment request</p>
+
+                  <h2 className="mt-1 text-3xl font-bold text-slate-900">
+                    {link.amount !== null
+                      ? `${formatCurrency(link.amount)} ${CURRENCY}`
+                      : "Choose amount"}
+                  </h2>
+
+                  {link.memo && <p className="mt-3 text-slate-600">{link.memo}</p>}
+                </div>
+
+                <form onSubmit={handlePay} className="space-y-4">
+                  {link.amount === null && (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        Amount ({CURRENCY})
+                      </label>
+
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        placeholder="1.0"
+                        required
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      Your name â€” optional
+                    </label>
+
+                    <Input
+                      type="text"
+                      value={payerName}
+                      onChange={(e) => setPayerName(e.target.value)}
+                      placeholder="Jane Doe"
+                    />
+                  </div>
+
+                  <Button type="submit" disabled={paying} className="w-full justify-center">
+                    {paying ? "Processing..." : "Pay"}
+                  </Button>
+
+                  <p className="text-center text-xs text-slate-400">
+                    Demo payment â€” this simulates a transfer inside FlowUSD, no
+                    real funds move.
+                  </p>
+                </form>
+              </>
+            )}
+          </Card>
+        )}
+      </div>
+    </main>
+  );
+}
+
+========== app\api\payment-links\route.ts ==========
+
+import { NextRequest, NextResponse } from "next/server";
+import { getDb, type StoredPaymentLink } from "@/lib/server/db";
+
+export async function GET() {
+  const db = getDb();
+
+  // Newest first.
+  const links = [...db.paymentLinks].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  return NextResponse.json(links);
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => null);
+  const { amount, memo } = body ?? {};
+
+  let normalizedAmount: number | null = null;
+
+  // amount is optional: omit it (or pass null) to create an "any amount"
+  // request where the payer types in how much to send.
+  if (amount !== undefined && amount !== null && amount !== "") {
+    const value = Number(amount);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      return NextResponse.json(
+        { message: "Amount must be a positive number, or left empty." },
+        { status: 400 }
+      );
+    }
+
+    normalizedAmount = Math.round(value * 1e6) / 1e6;
+  }
+
+  if (memo !== undefined && typeof memo !== "string") {
+    return NextResponse.json(
+      { message: "Memo must be text." },
+      { status: 400 }
+    );
+  }
+
+  const db = getDb();
+
+  const link: StoredPaymentLink = {
+    id: `pl_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    amount: normalizedAmount,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    ...(memo ? { memo } : {}),
+  };
+
+  db.paymentLinks.unshift(link);
+
+  return NextResponse.json(link, { status: 201 });
+}
+
+========== package.json ==========
+
+{
+  "name": "flowusd",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.6.0",
+    "axios": "^1.18.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "html-to-image": "^1.11.13",
+    "lucide-react": "^1.25.0",
+    "next": "16.2.10",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-qr-code": "^2.2.0",
+    "recharts": "^3.9.2",
+    "shadcn": "^4.13.0",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.6.0",
+    "tw-animate-css": "^1.4.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.10",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

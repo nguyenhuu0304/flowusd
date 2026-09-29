@@ -1,0 +1,602 @@
+
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import QRCode from "react-qr-code";
+import { toPng } from "html-to-image";
+import { toast } from "sonner";
+import {
+  Check,
+  Copy,
+  Download,
+  ExternalLink,
+  Link2,
+  QrCode,
+  RefreshCw,
+  Wallet2,
+} from "lucide-react";
+
+import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
+import Input from "@/components/ui/Input";
+import Textarea from "@/components/ui/Textarea";
+import { useWeb3Wallet } from "@/hooks/useWeb3Wallet";
+
+import {
+  createLinkOnChain,
+  generateOnChainLinkId,
+  getLinkOnChain,
+  isPaymentLinksContractConfigured,
+} from "@/lib/web3/paymentLinksContract";
+
+import {
+  PAYMENT_LINKS_CONTRACT_ADDRESS,
+  USDC_DECIMALS,
+  explorerTxUrl,
+} from "@/lib/web3/config";
+
+import { parseUnits, formatUnits } from "@/lib/web3/erc20";
+import { shortenAddress } from "@/lib/utils";
+import type { Eip1193Provider } from "@/lib/web3/provider";
+
+type SavedLink = {
+  id: string;
+  creator: string;
+  memo: string;
+  createdAt: string;
+  createHash: string;
+};
+
+type DisplayLink = SavedLink & {
+  amount: bigint;
+  paid: boolean;
+  payer: string;
+  paidAt: bigint;
+};
+
+const ZERO = "0x0000000000000000000000000000000000000000";
+
+function storageKey(address: string) {
+  return (
+    "flowusd:onchain-links:" +
+    PAYMENT_LINKS_CONTRACT_ADDRESS.toLowerCase() +
+    ":" +
+    address.toLowerCase()
+  );
+}
+
+function readSaved(address: string): SavedLink[] {
+  try {
+    const value = localStorage.getItem(storageKey(address));
+    if (!value) return [];
+
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((item): item is SavedLink => {
+      if (!item || typeof item !== "object") return false;
+
+      const record = item as Record<string, unknown>;
+
+      return (
+        typeof record.id === "string" &&
+        /^0x[a-fA-F0-9]{64}$/.test(record.id) &&
+        typeof record.creator === "string" &&
+        typeof record.memo === "string" &&
+        typeof record.createdAt === "string" &&
+        typeof record.createHash === "string"
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+function saveLink(address: string, link: SavedLink) {
+  const previous = readSaved(address);
+
+  const updated = [
+    link,
+    ...previous.filter(
+      (item) => item.id.toLowerCase() !== link.id.toLowerCase()
+    ),
+  ];
+
+  localStorage.setItem(storageKey(address), JSON.stringify(updated));
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForConfirmation(
+  provider: Eip1193Provider,
+  hash: string
+) {
+  for (let attempt = 0; attempt < 45; attempt++) {
+    const receipt = (await provider.request({
+      method: "eth_getTransactionReceipt",
+      params: [hash],
+    })) as { status?: string } | null;
+
+    if (receipt) {
+      if (
+        receipt.status === "0x1" ||
+        receipt.status === "0x01"
+      ) {
+        return;
+      }
+
+      throw new Error("Transaction failed on-chain: " + hash);
+    }
+
+    await sleep(2000);
+  }
+
+  throw new Error(
+    "Transaction is not confirmed yet. Check ArcScan: " + hash
+  );
+}
+
+function parseAmount(value: string): bigint {
+  const input = value.trim();
+
+  if (!input) return 0n;
+
+  if (!/^\d+(\.\d{1,6})?$/.test(input)) {
+    throw new Error("Enter a valid amount with up to 6 decimals.");
+  }
+
+  const result = parseUnits(input, USDC_DECIMALS);
+
+  if (result <= 0n) {
+    throw new Error("Amount must be greater than zero.");
+  }
+
+  return result;
+}
+
+function LinkRow({ link }: { link: DisplayLink }) {
+  const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+  const qrRef = useRef<HTMLDivElement>(null);
+
+  const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    setUrl(`${window.location.origin}/pay/onchain/${link.id}`);
+  }, [link.id]);
+
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      toast.success("Payment URL copied!");
+    } catch {
+      toast.error("Could not copy the URL.");
+    }
+  }
+
+  async function downloadQr() {
+    if (!qrRef.current) return;
+
+    try {
+      const image = await toPng(qrRef.current, {
+        pixelRatio: 3,
+        cacheBust: true,
+      });
+
+      const anchor = document.createElement("a");
+      anchor.href = image;
+      anchor.download = `flowusd-${link.id.slice(2, 12)}.png`;
+      anchor.click();
+    } catch {
+      toast.error("Could not download QR Code.");
+    }
+  }
+
+  const amountText =
+    link.amount === 0n
+      ? "Any amount"
+      : `${formatUnits(link.amount, USDC_DECIMALS)} USDC`;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-semibold text-slate-900">
+            {link.memo || "Payment request"}
+          </p>
+
+          <p className="mt-2 text-2xl font-bold text-slate-900">
+            {amountText}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            Created {new Date(link.createdAt).toLocaleString()}
+          </p>
+        </div>
+
+        <span
+          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+            link.paid
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-amber-100 text-amber-700"
+          }`}
+        >
+          {link.paid ? "Paid" : "Unpaid"}
+        </span>
+      </div>
+
+      <div className="mt-4 rounded-xl bg-slate-50 p-3">
+        <p className="mb-1 text-xs text-slate-500">
+          On-chain Link ID
+        </p>
+        <code className="block break-all text-xs">
+          {link.id}
+        </code>
+      </div>
+
+      <div className="mt-3 rounded-xl border p-3">
+        <p className="mb-1 text-xs text-slate-500">
+          Shareable payment URL
+        </p>
+
+        <code className="block break-all text-xs">
+          {url || "Preparing URL..."}
+        </code>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <Button
+          variant="outline"
+          onClick={copyLink}
+          disabled={!url}
+        >
+          {copied ? <Check size={15} /> : <Copy size={15} />}
+          {copied ? "Copied" : "Copy Link"}
+        </Button>
+
+        <Button
+          variant="outline"
+          onClick={() => setShowQr((value) => !value)}
+          disabled={!url}
+        >
+          <QrCode size={15} />
+          {showQr ? "Hide QR" : "Show QR"}
+        </Button>
+
+        <a
+          href={url || undefined}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={!url ? "pointer-events-none opacity-50" : ""}
+        >
+          <span className="flex items-center justify-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium hover:bg-slate-50">
+            <ExternalLink size={15} />
+            Open
+          </span>
+        </a>
+      </div>
+
+      {showQr && url && (
+        <div className="mt-5 flex flex-col items-center gap-3 border-t pt-5">
+          <div ref={qrRef} className="bg-white p-4">
+            <QRCode value={url} size={180} />
+          </div>
+
+          <Button variant="outline" onClick={downloadQr}>
+            <Download size={15} />
+            Download QR
+          </Button>
+        </div>
+      )}
+
+      <div className="mt-4 space-y-2 text-xs text-slate-500">
+        <p>Creator: {shortenAddress(link.creator)}</p>
+
+        {link.paid && (
+          <>
+            <p>Payer: {shortenAddress(link.payer)}</p>
+            <p>
+              Paid at:{" "}
+              {new Date(Number(link.paidAt) * 1000).toLocaleString()}
+            </p>
+          </>
+        )}
+
+        <a
+          href={explorerTxUrl(link.createHash)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-blue-600 underline"
+        >
+          View creation transaction
+          <ExternalLink size={12} />
+        </a>
+      </div>
+    </div>
+  );
+}
+
+export default function PaymentLinksCard() {
+  const wallet = useWeb3Wallet();
+
+  const [amount, setAmount] = useState("");
+  const [memo, setMemo] = useState("");
+
+  const [creating, setCreating] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [links, setLinks] = useState<DisplayLink[]>([]);
+
+  const configured = isPaymentLinksContractConfigured();
+
+  const refresh = useCallback(async () => {
+    if (
+      !configured ||
+      !wallet.address ||
+      !wallet.provider ||
+      !wallet.isOnArcTestnet
+    ) {
+      setLinks([]);
+      return;
+    }
+
+    const address = wallet.address;
+    const provider = wallet.provider;
+
+    setLoading(true);
+
+    try {
+      const saved = readSaved(address);
+      const results: DisplayLink[] = [];
+
+      for (const item of saved) {
+        try {
+          const chain = await getLinkOnChain(provider, item.id);
+
+          if (
+            chain.creator.toLowerCase() === ZERO ||
+            chain.creator.toLowerCase() !== address.toLowerCase()
+          ) {
+            continue;
+          }
+
+          results.push({
+            ...item,
+            amount: chain.amount,
+            paid: chain.paid,
+            payer: chain.payer,
+            paidAt: chain.paidAt,
+          });
+        } catch (error) {
+          console.warn("Could not load link:", item.id, error);
+        }
+      }
+
+      setLinks(results);
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not refresh payment links.");
+    } finally {
+      setLoading(false);
+    }
+  }, [
+    configured,
+    wallet.address,
+    wallet.provider,
+    wallet.isOnArcTestnet,
+  ]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  async function handleCreate(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+
+    if (
+      !configured ||
+      !wallet.address ||
+      !wallet.provider ||
+      !wallet.isOnArcTestnet
+    ) {
+      toast.error("Connect a wallet on Arc Testnet first.");
+      return;
+    }
+
+    setCreating(true);
+
+    try {
+      const amountRaw = parseAmount(amount);
+      const id = generateOnChainLinkId();
+
+      const hash = await createLinkOnChain(
+        wallet.provider,
+        wallet.address,
+        id,
+        amountRaw
+      );
+
+      toast.message("Waiting for blockchain confirmation...");
+
+      await waitForConfirmation(wallet.provider, hash);
+
+      const chain = await getLinkOnChain(wallet.provider, id);
+
+      if (
+        chain.creator.toLowerCase() !== wallet.address.toLowerCase()
+      ) {
+        throw new Error(
+          "Transaction confirmed, but link verification failed."
+        );
+      }
+
+      saveLink(wallet.address, {
+        id,
+        creator: wallet.address,
+        memo: memo.trim(),
+        createdAt: new Date().toISOString(),
+        createHash: hash,
+      });
+
+      setAmount("");
+      setMemo("");
+
+      await refresh();
+
+      toast.success("Payment link created on Arc Testnet!");
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not create payment link."
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+      <Card className="p-8">
+        <div className="mb-3 flex items-center gap-2">
+          <Link2 size={20} className="text-blue-600" />
+          <h2 className="text-xl font-bold text-slate-900">
+            Create a Payment Link
+          </h2>
+        </div>
+
+        <p className="mb-5 text-sm text-slate-500">
+          Create a shareable USDC payment request on Arc Testnet.
+          Each link is recorded on-chain.
+        </p>
+
+        {!configured ? (
+          <p className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+            Payment Links contract is not configured.
+          </p>
+        ) : !wallet.address ? (
+          <div className="space-y-3 rounded-xl bg-slate-50 p-4">
+            <p className="text-sm text-slate-600">
+              Connect your wallet to create payment links.
+            </p>
+
+            {wallet.needsWalletSelection ? (
+              wallet.wallets.map((option) => (
+                <Button
+                  key={option.uuid}
+                  variant="outline"
+                  disabled={wallet.connecting}
+                  onClick={() =>
+                    wallet.connectWith(option).catch((error) =>
+                      toast.error(error.message)
+                    )
+                  }
+                >
+                  <Wallet2 size={16} />
+                  {option.name}
+                </Button>
+              ))
+            ) : (
+              <Button
+                disabled={wallet.connecting}
+                onClick={() =>
+                  wallet.connect().catch((error) =>
+                    toast.error(error.message)
+                  )
+                }
+              >
+                <Wallet2 size={16} />
+                Connect Wallet
+              </Button>
+            )}
+          </div>
+        ) : !wallet.isOnArcTestnet ? (
+          <p className="rounded-xl bg-amber-50 p-4 text-sm text-amber-700">
+            Please switch your connected wallet to Arc Testnet
+            (Chain ID 5042002).
+          </p>
+        ) : (
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Amount (USDC)
+              </label>
+
+              <Input
+                type="number"
+                min="0"
+                step="0.000001"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="Leave empty for any amount"
+              />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-medium">
+                Description (optional)
+              </label>
+
+              <Textarea
+                rows={2}
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
+                placeholder="What is this payment for?"
+              />
+            </div>
+
+            <Button
+              type="submit"
+              disabled={creating}
+              className="w-full justify-center"
+            >
+              {creating
+                ? "Confirming on Arc Testnet..."
+                : "Create On-chain Link"}
+            </Button>
+          </form>
+        )}
+      </Card>
+
+      <Card className="p-8">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-bold text-slate-900">
+            Your Payment Links
+          </h2>
+
+          <Button
+            variant="outline"
+            disabled={loading || !wallet.address || !wallet.isOnArcTestnet}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw size={15} />
+            Refresh
+          </Button>
+        </div>
+
+        <p className="mb-5 text-xs text-slate-500">
+          Links saved in this browser for the connected wallet.
+          Payment status is verified directly on Arc Testnet.
+        </p>
+
+        {loading ? (
+          <p className="text-sm text-slate-500">
+            Loading on-chain payment links...
+          </p>
+        ) : links.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No locally saved on-chain links for this wallet yet.
+          </p>
+        ) : (
+          <div className="space-y-4">
+            {links.map((link) => (
+              <LinkRow key={link.id} link={link} />
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}

@@ -19,9 +19,9 @@ const TRANSFER_TOPIC =
 const PAGE_BLOCKS = 2000;
 const LOG_CHUNK_BLOCKS = 500;
 const MAX_TRANSACTIONS = 100;
-const MAX_RPC_ATTEMPTS = 2;
-const RPC_PAUSE_MS = 650;
-const CACHE_TTL_MS = 120_000;
+const MAX_RPC_ATTEMPTS = 4;
+const RPC_PAUSE_MS = 500;
+const CACHE_TTL_MS = 60_000;
 
 type RpcLog = {
   address: string;

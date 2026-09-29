@@ -16,7 +16,6 @@ import { useAppearance } from "@/contexts/AppearanceContext";
 import PaymentLinksCard from "@/components/dashboard/PaymentLinksCard";
 import TransactionHistory from "@/components/dashboard/TransactionHistory";
 import SplitBillCard from "@/components/dashboard/SplitBillCard";
-import SplitBillBatchCard from "@/components/dashboard/SplitBillBatchCard";
 
 type DashboardTab = "payments" | "transactions" | "split";
 
@@ -196,13 +195,7 @@ export default function DashboardContent() {
         ) : activeTab === "transactions" ? (
           <section role="tabpanel"><TransactionHistory /></section>
         ) : (
-          <section role="tabpanel"><div className="space-y-6">
-              <SplitBillBatchCard />
-              <details className="rounded-2xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-                <summary className="cursor-pointer font-semibold">Legacy split bills (existing links)</summary>
-                <div className="mt-4"><SplitBillCard /></div>
-              </details>
-            </div></section>
+          <section role="tabpanel"><SplitBillCard /></section>
         )}
 
         <p className="pb-6 text-center text-xs text-slate-400 dark:text-slate-500">

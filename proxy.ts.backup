@@ -53,7 +53,7 @@ export function proxy(request: NextRequest) {
   // the real /pay/onchain/[id] payment flow.
   if (
     pathname.startsWith("/pay/") &&
-    !pathname.startsWith("/pay/onchain/") && !pathname.startsWith("/pay/split/")
+    !pathname.startsWith("/pay/onchain/")
   ) {
     return new NextResponse("Not Found", {
       status: 404,
