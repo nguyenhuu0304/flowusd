@@ -32,6 +32,19 @@ export default function PaySplitPage() {
   const [paying, setPaying] = useState(false);
   const [payer, setPayer] = useState("");
   const [paymentHash, setPaymentHash] = useState("");
+  const [walletAvailable, setWalletAvailable] = useState<boolean | null>(null);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { setWalletAvailable(Boolean(window.ethereum)); }, []);
+  async function copyPaymentUrl() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      toast.success("Payment link copied. Open it inside your wallet's DApp browser.");
+    } catch {
+      toast.error("Copy unavailable. Copy the URL from your browser address bar.");
+    }
+  }
+
   const busy = useRef(false);
   const reload = useCallback(async () => {
     setLoading(true); setError("");
@@ -95,6 +108,11 @@ export default function PaySplitPage() {
         {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">{error}</p>}
         {data && <><div className="text-center"><p className="text-sm text-slate-500">{data.paid ? "Payment completed" : "Payment requested"}</p><p className="mt-2 text-3xl font-bold">{amount} USDC</p><span className={`mt-3 inline-block rounded-full px-3 py-1 text-xs font-bold ${data.paid ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>{data.paid ? "Paid" : "Unpaid"}</span></div>
           <div className="space-y-2 rounded-xl bg-slate-50 p-4 text-xs dark:bg-slate-800"><p>Recipient: <a href={explorerAddressUrl(data.creator)} target="_blank" rel="noreferrer" className="break-all text-blue-600 underline">{data.creator}</a></p><p>Contract: <a href={explorerAddressUrl(BATCH_CONTRACT_ADDRESS)} target="_blank" rel="noreferrer" className="break-all text-blue-600 underline">{BATCH_CONTRACT_ADDRESS}</a></p><p>Link ID: <span className="break-all font-mono">{id}</span></p>{data.paid && <><p>Payer: <span className="break-all">{data.payer}</span></p><p>Paid at: {new Date(Number(data.paidAt) * 1000).toLocaleString()}</p></>}</div>
+          {!data.paid && walletAvailable === false && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-slate-700 dark:border-blue-800 dark:bg-blue-950 dark:text-slate-100">
+            <p className="font-semibold">Paying from Telegram on a phone?</p>
+            <p>This browser has no wallet connection. Open this exact payment URL in your mobile wallet's built-in DApp browser, then connect and sign there. Do not paste your seed phrase anywhere.</p>
+            <button type="button" onClick={() => void copyPaymentUrl()} className="w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white">{copied ? "Copied · Open in wallet browser" : "Copy link for wallet browser"}</button>
+          </div>}
           {!data.paid && <>{!payer ? <button type="button" onClick={() => void connect()} className="w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white">Connect wallet on Arc Testnet</button> : <><p className="break-all text-xs text-slate-500">Payer: {payer}</p><button type="button" disabled={paying} onClick={() => void pay()} className="w-full rounded-xl bg-blue-600 px-4 py-3 font-semibold text-white disabled:opacity-50">{paying ? "Waiting for wallet / confirmation..." : `Pay ${amount} USDC`}</button><p className="text-xs text-slate-500">Wallet may ask for an exact USDC approval first, then payment. Never approve unlimited funds.</p></>}</>}
         </>}
         {paymentHash && <a href={explorerTxUrl(paymentHash)} target="_blank" rel="noreferrer" className="block break-all text-center text-xs text-blue-600 underline">View payment transaction ↗</a>}
