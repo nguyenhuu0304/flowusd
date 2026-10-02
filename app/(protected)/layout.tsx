@@ -1,4 +1,3 @@
-
 "use client";
 
 import { AppearanceProvider } from "@/contexts/AppearanceContext";

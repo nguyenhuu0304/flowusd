@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# FlowUSD local/test files
+telegram-bot/telegram_state.db
+telegram_review.txt
+components/dashboard/*.before-*.tsx
+app/(protected)/bill-backup/

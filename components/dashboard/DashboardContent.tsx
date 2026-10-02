@@ -1,5 +1,4 @@
-
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import {
@@ -7,6 +6,7 @@ import {
   History,
   Link2,
   RefreshCw,
+  ReceiptText,
   Wallet,
 } from "lucide-react";
 
@@ -15,64 +15,158 @@ import { useAppearance } from "@/contexts/AppearanceContext";
 
 import PaymentLinksCard from "@/components/dashboard/PaymentLinksCard";
 import TransactionHistory from "@/components/dashboard/TransactionHistory";
-import SplitBillCard from "@/components/dashboard/SplitBillCard";
 import SplitBillBatchCard from "@/components/dashboard/SplitBillBatchCard";
 
-type DashboardTab = "payments" | "transactions" | "split";
+type DashboardTab =
+  | "payments"
+  | "transactions"
+  | "split";
 
 export default function DashboardContent() {
   const wallet = useWeb3Wallet();
-
   const { language, t } = useAppearance();
 
+  const vi = language === "vi";
+
   const [activeTab, setActiveTab] =
-    useState<DashboardTab>("payments");
+    useState<DashboardTab>("split");
 
   const connected = Boolean(
-    wallet.address && wallet.provider
+    wallet.address &&
+      wallet.provider
   );
 
   const ready =
-    connected && wallet.isOnArcTestnet;
+    connected &&
+    wallet.isOnArcTestnet;
 
   const balance =
-    ready && wallet.balance !== null
+    ready &&
+    wallet.balance !== null
       ? `${wallet.balance} USDC`
       : "— USDC";
 
   const connectionStatus = ready
-    ? language === "vi"
+    ? vi
       ? "Đã kết nối Arc Testnet"
       : "Arc Testnet Connected"
     : connected
       ? t("wrongNetwork")
       : t("disconnected");
 
+  const shortWallet =
+    wallet.address
+      ? `${wallet.address.slice(
+          0,
+          6
+        )}…${wallet.address.slice(
+          -4
+        )}`
+      : "";
+
+  const tabs: Array<{
+    id: DashboardTab;
+    label: string;
+    description: string;
+    icon: typeof Link2;
+  }> = [
+    {
+      id: "split",
+      label: vi
+        ? "Chia hóa đơn"
+        : "Split Bill",
+      description: vi
+        ? "Tạo bill & gửi Telegram"
+        : "Create bills & notify members",
+      icon: ReceiptText,
+    },
+    {
+      id: "payments",
+      label: t("paymentLinks"),
+      description: vi
+        ? "Thanh toán 1-1"
+        : "Simple payment links",
+      icon: Link2,
+    },
+    {
+      id: "transactions",
+      label: t("transactions"),
+      description: vi
+        ? "Lịch sử on-chain"
+        : "On-chain history",
+      icon: History,
+    },
+  ];
+
   return (
-    <main className="min-h-full flex-1 bg-slate-50 px-4 py-8 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl space-y-6">
+    <main className="min-h-full flex-1 bg-slate-50 px-4 py-6 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl space-y-5">
 
-        {/* Dashboard header */}
-        <div>
-          <h1 className="text-3xl font-bold">
-            {t("dashboard")}
-          </h1>
+        {/* Compact header */}
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold sm:text-3xl">
+              {t("dashboard")}
+            </h1>
 
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-            {t("paymentDescription")}
-          </p>
-        </div>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {vi
+                ? "Tạo và theo dõi thanh toán USDC trên Arc."
+                : "Create and track USDC payments on Arc."}
+            </p>
+          </div>
 
-        {/* On-chain wallet balance */}
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-colors dark:border-slate-700 dark:bg-slate-900 sm:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-              <Wallet size={18} />
-              {t("connectedWallet")}
+          {wallet.address && (
+            <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 font-mono text-xs text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+              {shortWallet}
+            </span>
+          )}
+        </header>
+
+        {/* Compact wallet overview */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-colors dark:border-slate-700 dark:bg-slate-900">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <Wallet size={15} />
+                {t("usdcBalance")}
+              </div>
+
+              <div className="mt-2 flex items-center gap-2">
+                <strong className="text-2xl font-bold">
+                  {wallet.loadingBalance
+                    ? t("loading")
+                    : balance}
+                </strong>
+
+                {ready && (
+                  <button
+                    type="button"
+                    disabled={
+                      wallet.loadingBalance
+                    }
+                    onClick={() =>
+                      void wallet.refreshBalance()
+                    }
+                    title={t("refresh")}
+                    aria-label={t("refresh")}
+                    className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 disabled:opacity-50 dark:hover:bg-slate-800"
+                  >
+                    <RefreshCw
+                      size={16}
+                      className={
+                        wallet.loadingBalance
+                          ? "animate-spin"
+                          : ""
+                      }
+                    />
+                  </button>
+                )}
+              </div>
             </div>
 
             <span
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+              className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
                 ready
                   ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
                   : connected
@@ -85,133 +179,96 @@ export default function DashboardContent() {
             </span>
           </div>
 
-          <div className="mt-6">
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              {t("usdcBalance")}
+          {!ready && (
+            <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+              {vi
+                ? "Kết nối ví và chuyển sang Arc Testnet để sử dụng thanh toán."
+                : "Connect your wallet and switch to Arc Testnet to use payments."}
             </p>
-
-            <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h2 className="break-all text-3xl font-bold">
-                {wallet.loadingBalance
-                  ? t("loading")
-                  : balance}
-              </h2>
-
-              {ready && (
-                <button
-                  type="button"
-                  disabled={wallet.loadingBalance}
-                  onClick={() =>
-                    void wallet.refreshBalance()
-                  }
-                  title={t("refresh")}
-                  aria-label={t("refresh")}
-                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-                >
-                  <RefreshCw
-                    size={17}
-                    className={
-                      wallet.loadingBalance
-                        ? "animate-spin"
-                        : ""
-                    }
-                  />
-                </button>
-              )}
-            </div>
-
-            {wallet.address && (
-              <p className="mt-3 break-all font-mono text-xs text-slate-500 dark:text-slate-400">
-                {wallet.address}
-              </p>
-            )}
-
-            {!ready && (
-              <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                {language === "vi"
-                  ? "Vui lòng kết nối ví trên Arc Testnet bằng nút ở góc trên bên phải."
-                  : "Connect a wallet on Arc Testnet using the button in the top-right corner."}
-              </p>
-            )}
-          </div>
+          )}
         </section>
 
-        {/* Dashboard tabs */}
-        <div
-          className="grid grid-cols-1 gap-3 sm:grid-cols-3"
+        {/* Friendly action tabs */}
+        <nav
+          className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:grid-cols-3"
           role="tablist"
           aria-label={
-            language === "vi"
+            vi
               ? "Chức năng thanh toán"
               : "Payment sections"
           }
         >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "payments"}
-            onClick={() =>
-              setActiveTab("payments")
-            }
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-4 text-sm font-semibold transition sm:text-base ${
-              activeTab === "payments"
-                ? "border-blue-600 bg-blue-600 text-white"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            }`}
-          >
-            <Link2 size={18} />
-            {t("paymentLinks")}
-          </button>
+          {tabs.map(tab => {
+            const Icon = tab.icon;
+            const active =
+              activeTab === tab.id;
 
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === "transactions"}
-            onClick={() =>
-              setActiveTab("transactions")
-            }
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-4 text-sm font-semibold transition sm:text-base ${
-              activeTab === "transactions"
-                ? "border-blue-600 bg-blue-600 text-white"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            }`}
-          >
-            <History size={18} />
-            {t("transactions")}
-          </button>
-          <button type="button" role="tab" aria-selected={activeTab === "split"} onClick={() => setActiveTab("split")}
-            className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-4 text-sm font-semibold transition sm:text-base ${activeTab === "split" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"}`}>
-            {language === "vi" ? "Chia hÃ³a Ä‘Æ¡n" : "Split Bill"}
-          </button>
-        </div>
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() =>
+                  setActiveTab(tab.id)
+                }
+                className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left transition ${
+                  active
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
+                }`}
+              >
+                <span
+                  className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${
+                    active
+                      ? "bg-white/15"
+                      : "bg-slate-100 dark:bg-slate-800"
+                  }`}
+                >
+                  <Icon size={18} />
+                </span>
 
-        {/* Show only the active tab */}
-        {activeTab === "payments" ? (
-          <section
-            role="tabpanel"
-            className="space-y-6"
-          >
+                <span className="min-w-0">
+                  <span className="block font-semibold">
+                    {tab.label}
+                  </span>
+
+                  <span
+                    className={`mt-0.5 block truncate text-xs ${
+                      active
+                        ? "text-blue-100"
+                        : "text-slate-400"
+                    }`}
+                  >
+                    {tab.description}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Active workspace only */}
+        <section role="tabpanel">
+          {activeTab ===
+          "payments" ? (
             <PaymentLinksCard />
-          </section>
-        ) : activeTab === "transactions" ? (
-          <section role="tabpanel"><TransactionHistory /></section>
-        ) : (
-          <section role="tabpanel"><div className="space-y-6">
-              <SplitBillBatchCard />
-              <details className="rounded-2xl border border-slate-300 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-                <summary className="cursor-pointer font-semibold">Legacy split bills (existing links)</summary>
-                <div className="mt-4"><SplitBillCard /></div>
-              </details>
-            </div></section>
-        )}
+          ) : activeTab ===
+            "transactions" ? (
+            <TransactionHistory />
+          ) : (
+            <SplitBillBatchCard />
+          )}
+        </section>
 
-        <p className="pb-6 text-center text-xs text-slate-400 dark:text-slate-500">
+        <p className="pb-4 text-center text-xs text-slate-400 dark:text-slate-500">
           FlowUSD · Arc Testnet ·{" "}
-          {language === "vi"
-            ? "Thanh toán USDC trên blockchain"
+          {vi
+            ? "Thanh toán USDC on-chain"
             : "On-chain USDC Payments"}
         </p>
       </div>
     </main>
   );
 }
+
