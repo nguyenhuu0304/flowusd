@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -19,7 +18,9 @@ import {
 } from "@/lib/web3/discovery";
 
 import {
+  ARC_TESTNET_CHAIN_ID_DEC,
   ARC_TESTNET_CHAIN_ID_HEX,
+  ARC_TESTNET_PARAMS,
 } from "@/lib/web3/config";
 
 import {
@@ -36,7 +37,20 @@ export type WalletOption = {
   provider: Eip1193Provider;
 };
 
+type WalletConnectProviderLike = Eip1193Provider & {
+  connect?: (options?: {
+    chains?: number[];
+    optionalChains?: number[];
+    rpcMap?: Record<number, string>;
+  }) => Promise<unknown>;
+  disconnect?: () => Promise<void>;
+  session?: unknown;
+};
+
 const LEGACY_DISCOVERY_TIMEOUT_MS = 300;
+
+const WALLETCONNECT_UUID = "walletconnect";
+const WALLETCONNECT_NAME = "Mobile Wallet / WalletConnect";
 
 export const FLOWUSD_SELECTED_WALLET_KEY =
   "flowusd:selected-wallet-uuid";
@@ -51,6 +65,14 @@ type WalletSyncDetail = {
   address: string | null;
   chainId: string | null;
 };
+
+let walletConnectSingleton:
+  | WalletConnectProviderLike
+  | null = null;
+
+let walletConnectInitPromise:
+  | Promise<WalletConnectProviderLike>
+  | null = null;
 
 function normalizeChainId(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -137,12 +159,106 @@ async function getProviderState(
   };
 }
 
+async function getWalletConnectProvider(): Promise<WalletConnectProviderLike> {
+  if (walletConnectSingleton) {
+    return walletConnectSingleton;
+  }
+
+  if (walletConnectInitPromise) {
+    return walletConnectInitPromise;
+  }
+
+  walletConnectInitPromise = (async () => {
+    if (typeof window === "undefined") {
+      throw new Error(
+        "WalletConnect is only available in the browser."
+      );
+    }
+
+    const projectId =
+      process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
+
+    if (!projectId) {
+      throw new Error(
+        "Missing NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID."
+      );
+    }
+
+    const { EthereumProvider } = await import(
+      "@walletconnect/ethereum-provider"
+    );
+
+    const rpcUrl =
+      ARC_TESTNET_PARAMS.rpcUrls[0];
+
+    const provider =
+      await EthereumProvider.init({
+        projectId,
+        optionalChains: [
+          ARC_TESTNET_CHAIN_ID_DEC,
+        ],
+        showQrModal: true,
+        rpcMap: {
+          [ARC_TESTNET_CHAIN_ID_DEC]:
+            rpcUrl,
+        },
+        methods: [
+          "eth_accounts",
+          "eth_requestAccounts",
+          "eth_chainId",
+          "eth_call",
+          "eth_sendTransaction",
+          "personal_sign",
+          "eth_signTypedData",
+          "eth_signTypedData_v4",
+          "wallet_switchEthereumChain",
+          "wallet_addEthereumChain",
+        ],
+        events: [
+          "accountsChanged",
+          "chainChanged",
+        ],
+        metadata: {
+          name: "FlowUSD",
+          description:
+            "USDC payments on Circle Arc Testnet",
+          url: window.location.origin,
+          icons: [
+            `${window.location.origin}/favicon.ico`,
+          ],
+        },
+        qrModalOptions: {
+          enableMobileFullScreen: true,
+        },
+      });
+
+    walletConnectSingleton =
+      provider as unknown as WalletConnectProviderLike;
+
+    return walletConnectSingleton;
+  })();
+
+  try {
+    return await walletConnectInitPromise;
+  } catch (error) {
+    walletConnectInitPromise = null;
+    throw error;
+  }
+}
+
 export function useWeb3Wallet() {
   const [discovered, setDiscovered] =
     useState<Eip6963ProviderDetail[]>([]);
 
   const [legacyFallback, setLegacyFallback] =
     useState<Eip1193Provider | null>(null);
+
+  const [
+    walletConnectProvider,
+    setWalletConnectProvider,
+  ] = useState<WalletConnectProviderLike | null>(
+    null
+  );
 
   const [discoveryDone, setDiscoveryDone] =
     useState(false);
@@ -168,8 +284,6 @@ export function useWeb3Wallet() {
   const [sending, setSending] =
     useState(false);
 
-  // Restore only the selected wallet identity.
-  // Never trust a cached address as proof of connection.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -180,7 +294,6 @@ export function useWeb3Wallet() {
     setSelectedUuid(savedUuid);
   }, []);
 
-  // Discover injected browser wallets.
   useEffect(() => {
     const seen =
       new Map<string, Eip6963ProviderDetail>();
@@ -208,28 +321,70 @@ export function useWeb3Wallet() {
     };
   }, []);
 
+  useEffect(() => {
+    const projectId =
+      process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
+
+    if (!projectId) {
+      return;
+    }
+
+    let active = true;
+
+    void getWalletConnectProvider()
+      .then((provider) => {
+        if (active) {
+          setWalletConnectProvider(provider);
+        }
+      })
+      .catch((error) => {
+        console.warn(
+          "[wallet] WalletConnect initialization failed:",
+          error instanceof Error
+            ? error.message
+            : String(error)
+        );
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const wallets: WalletOption[] = useMemo(() => {
+    const items: WalletOption[] = [];
+
     if (discovered.length > 0) {
-      return discovered.map((detail) => ({
-        uuid: detail.info.uuid,
-        name: detail.info.name,
-        icon: detail.info.icon,
-        provider: detail.provider,
-      }));
+      items.push(
+        ...discovered.map((detail) => ({
+          uuid: detail.info.uuid,
+          name: detail.info.name,
+          icon: detail.info.icon,
+          provider: detail.provider,
+        }))
+      );
+    } else if (legacyFallback) {
+      items.push({
+        uuid: "legacy",
+        name: "Browser Wallet",
+        provider: legacyFallback,
+      });
     }
 
-    if (legacyFallback) {
-      return [
-        {
-          uuid: "legacy",
-          name: "Browser Wallet",
-          provider: legacyFallback,
-        },
-      ];
+    if (walletConnectProvider) {
+      items.push({
+        uuid: WALLETCONNECT_UUID,
+        name: WALLETCONNECT_NAME,
+        provider: walletConnectProvider,
+      });
     }
 
-    return [];
-  }, [discovered, legacyFallback]);
+    return items;
+  }, [
+    discovered,
+    legacyFallback,
+    walletConnectProvider,
+  ]);
 
   const selectedWallet =
     wallets.find(
@@ -323,8 +478,6 @@ export function useWeb3Wallet() {
     []
   );
 
-  // Sync wallet selection and state across
-  // all FlowUSD components in the same tab.
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -361,7 +514,6 @@ export function useWeb3Wallet() {
         )
       );
 
-      // The provider must verify the address.
       setAddress(null);
       setChainId(null);
       setBalance(null);
@@ -390,8 +542,6 @@ export function useWeb3Wallet() {
     };
   }, []);
 
-  // Verify the account and chain directly with
-  // the selected provider, not localStorage.
   useEffect(() => {
     const provider = selectedWallet?.provider;
 
@@ -435,7 +585,6 @@ export function useWeb3Wallet() {
     };
   }, [selectedWallet?.provider]);
 
-  // Listen to account and network changes.
   useEffect(() => {
     const provider = selectedWallet?.provider;
 
@@ -484,6 +633,21 @@ export function useWeb3Wallet() {
       void synchronize();
     }
 
+    function handleDisconnect(
+      ..._args: unknown[]
+    ) {
+      setSelectedUuid(null);
+      setAddress(null);
+      setChainId(null);
+      setBalance(null);
+
+      publishWalletState({
+        uuid: null,
+        address: null,
+        chainId: null,
+      });
+    }
+
     provider.on(
       "accountsChanged",
       handleAccountsChanged
@@ -492,6 +656,11 @@ export function useWeb3Wallet() {
     provider.on(
       "chainChanged",
       handleChainChanged
+    );
+
+    provider.on(
+      "disconnect",
+      handleDisconnect
     );
 
     return () => {
@@ -506,13 +675,17 @@ export function useWeb3Wallet() {
         "chainChanged",
         handleChainChanged
       );
+
+      provider.removeListener?.(
+        "disconnect",
+        handleDisconnect
+      );
     };
   }, [
     selectedWallet?.provider,
     selectedWallet?.uuid,
   ]);
 
-  // Load USDC balance only on Arc Testnet.
   useEffect(() => {
     if (
       !address ||
@@ -539,6 +712,29 @@ export function useWeb3Wallet() {
       setConnecting(true);
 
       try {
+        if (wallet.uuid === WALLETCONNECT_UUID) {
+          const wc =
+            wallet.provider as WalletConnectProviderLike;
+
+          const rpcUrl =
+            ARC_TESTNET_PARAMS.rpcUrls[0];
+
+          if (!wc.session && wc.connect) {
+            await wc.connect({
+              chains: [
+                ARC_TESTNET_CHAIN_ID_DEC,
+              ],
+              optionalChains: [
+                ARC_TESTNET_CHAIN_ID_DEC,
+              ],
+              rpcMap: {
+                [ARC_TESTNET_CHAIN_ID_DEC]:
+                  rpcUrl,
+              },
+            });
+          }
+        }
+
         await requestAccounts(
           wallet.provider
         );
@@ -601,8 +797,17 @@ export function useWeb3Wallet() {
 
       if (!target) {
         if (wallets.length === 0) {
+          const projectId =
+            process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
+
+          if (!projectId) {
+            throw new Error(
+              "No browser wallet detected and WalletConnect is not configured."
+            );
+          }
+
           throw new Error(
-            "No browser wallet detected."
+            "WalletConnect is still initializing. Try again in a moment."
           );
         }
 
@@ -621,6 +826,24 @@ export function useWeb3Wallet() {
   );
 
   const disconnect = useCallback(() => {
+    const current = selectedWallet;
+
+    if (
+      current?.uuid === WALLETCONNECT_UUID
+    ) {
+      const wc =
+        current.provider as WalletConnectProviderLike;
+
+      void wc.disconnect?.().catch(
+        (error) => {
+          console.warn(
+            "[wallet] WalletConnect disconnect failed:",
+            error
+          );
+        }
+      );
+    }
+
     setSelectedUuid(null);
     persistAddress(null);
     setChainId(null);
@@ -631,7 +854,10 @@ export function useWeb3Wallet() {
       address: null,
       chainId: null,
     });
-  }, [persistAddress]);
+  }, [
+    persistAddress,
+    selectedWallet,
+  ]);
 
   const send = useCallback(
     async (
