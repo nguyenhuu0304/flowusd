@@ -166,7 +166,7 @@ export default function SplitBillBatchCard() {
 
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
-  const [people, setPeople] = useState(3);
+  const [people, setPeople] = useState(1);
 
   const [names, setNames] = useState<string[]>([]);
   const [chosenIds, setChosenIds] = useState<string[]>([]);
@@ -186,7 +186,7 @@ export default function SplitBillBatchCard() {
   const groupSize = useMemo(() => {
     if (
       Number.isInteger(people) &&
-      people >= 2 &&
+      people >= 1 &&
       people <= 100
     ) {
       return people;
@@ -357,7 +357,7 @@ export default function SplitBillBatchCard() {
   function makeBill(address: string): BatchBill {
     if (validTotal === null || !groupSize) {
       throw new Error(
-        "Enter a positive amount and 2-100 people."
+        "Enter a positive amount and 1-100 people."
       );
     }
 
@@ -833,12 +833,12 @@ export default function SplitBillBatchCard() {
 
             <label className="block text-sm font-medium">
               {vi
-                ? "Số người (2–100)"
-                : "People (2–100)"}
+                ? "Số người (1–100)"
+                : "People (1–100)"}
 
               <input
                 type="number"
-                min={2}
+                min={1}
                 max={100}
                 value={people}
                 onChange={event =>

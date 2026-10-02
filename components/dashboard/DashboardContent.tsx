@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   CheckCircle2,
   History,
-  Link2,
   RefreshCw,
   ReceiptText,
   Wallet,
@@ -13,12 +12,10 @@ import {
 import { useWeb3Wallet } from "@/hooks/useWeb3Wallet";
 import { useAppearance } from "@/contexts/AppearanceContext";
 
-import PaymentLinksCard from "@/components/dashboard/PaymentLinksCard";
 import TransactionHistory from "@/components/dashboard/TransactionHistory";
 import SplitBillBatchCard from "@/components/dashboard/SplitBillBatchCard";
 
 type DashboardTab =
-  | "payments"
   | "transactions"
   | "split";
 
@@ -68,7 +65,7 @@ export default function DashboardContent() {
     id: DashboardTab;
     label: string;
     description: string;
-    icon: typeof Link2;
+    icon: typeof ReceiptText;
   }> = [
     {
       id: "split",
@@ -79,14 +76,6 @@ export default function DashboardContent() {
         ? "Tạo bill & gửi Telegram"
         : "Create bills & notify members",
       icon: ReceiptText,
-    },
-    {
-      id: "payments",
-      label: t("paymentLinks"),
-      description: vi
-        ? "Thanh toán 1-1"
-        : "Simple payment links",
-      icon: Link2,
     },
     {
       id: "transactions",
@@ -190,7 +179,7 @@ export default function DashboardContent() {
 
         {/* Friendly action tabs */}
         <nav
-          className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:grid-cols-3"
+          className="grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm dark:border-slate-700 dark:bg-slate-900 sm:grid-cols-2"
           role="tablist"
           aria-label={
             vi
@@ -251,9 +240,6 @@ export default function DashboardContent() {
         {/* Active workspace only */}
         <section role="tabpanel">
           {activeTab ===
-          "payments" ? (
-            <PaymentLinksCard />
-          ) : activeTab ===
             "transactions" ? (
             <TransactionHistory />
           ) : (
@@ -271,4 +257,3 @@ export default function DashboardContent() {
     </main>
   );
 }
-
