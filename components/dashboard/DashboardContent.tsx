@@ -1,4 +1,4 @@
-﻿"use client";
+﻿﻿"use client";
 
 import { useState } from "react";
 import {
@@ -12,6 +12,7 @@ import {
 import { useWeb3Wallet } from "@/hooks/useWeb3Wallet";
 import { useAppearance } from "@/contexts/AppearanceContext";
 
+import BillCloudBridge from "@/components/dashboard/BillCloudBridge";
 import TransactionHistory from "@/components/dashboard/TransactionHistory";
 import SplitBillBatchCard from "@/components/dashboard/SplitBillBatchCard";
 
@@ -89,6 +90,8 @@ export default function DashboardContent() {
 
   return (
     <main className="min-h-full flex-1 bg-slate-50 px-4 py-6 text-slate-900 transition-colors dark:bg-slate-950 dark:text-slate-100 sm:px-6 lg:px-8">
+      <BillCloudBridge />
+
       <div className="mx-auto max-w-5xl space-y-5">
 
         {/* Compact header */}
