@@ -49,7 +49,7 @@ function syncedKey(
   billId: string
 ): string {
   return (
-    "flowusd:cloud-bill-synced:v1:" +
+    "flowusd:cloud-bill-synced:v2:" +
     owner.toLowerCase() +
     ":" +
     billId.toLowerCase()
@@ -58,8 +58,79 @@ function syncedKey(
 
 function reloadKey(owner: string): string {
   return (
-    "flowusd:cloud-reload:v1:" +
+    "flowusd:cloud-reload:v2:" +
     owner.toLowerCase()
+  );
+}
+
+function isMember(
+  value: unknown
+): value is CloudMember {
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
+    return false;
+  }
+
+  const member =
+    value as Partial<CloudMember>;
+
+  return (
+    typeof member.id === "string" &&
+    /^0x[a-fA-F0-9]{64}$/.test(
+      member.id
+    ) &&
+    typeof member.name === "string" &&
+    typeof member.raw === "string" &&
+    /^\d+$/.test(member.raw) &&
+    (
+      member.status === "pending" ||
+      member.status === "unpaid" ||
+      member.status === "paid"
+    )
+  );
+}
+
+function isBill(
+  value: unknown,
+  owner: string
+): value is CloudBill {
+  if (
+    !value ||
+    typeof value !== "object"
+  ) {
+    return false;
+  }
+
+  const bill =
+    value as Partial<CloudBill>;
+
+  return (
+    typeof bill.id === "string" &&
+    typeof bill.creator === "string" &&
+    bill.creator.toLowerCase() ===
+      owner.toLowerCase() &&
+    typeof bill.title === "string" &&
+    typeof bill.createdAt === "string" &&
+    !Number.isNaN(
+      Date.parse(bill.createdAt)
+    ) &&
+    typeof bill.totalRaw === "string" &&
+    /^\d+$/.test(bill.totalRaw) &&
+    typeof bill.txHash === "string" &&
+    /^0x[a-fA-F0-9]{64}$/.test(
+      bill.txHash
+    ) &&
+    (
+      bill.stage === "prepared" ||
+      bill.stage === "submitted" ||
+      bill.stage === "confirmed" ||
+      bill.stage === "needs_review"
+    ) &&
+    Array.isArray(bill.members) &&
+    bill.members.length > 0 &&
+    bill.members.every(isMember)
   );
 }
 
@@ -67,29 +138,45 @@ function readLocalBills(
   owner: string
 ): CloudBill[] {
   try {
-    const raw = localStorage.getItem(
-      storageKey(owner)
-    );
+    const raw =
+      localStorage.getItem(
+        storageKey(owner)
+      );
 
-    const parsed: unknown = JSON.parse(
-      raw || "[]"
-    );
+    const parsed: unknown =
+      JSON.parse(raw || "[]");
 
     if (!Array.isArray(parsed)) {
       return [];
     }
 
-    return parsed.filter(
-      (value): value is CloudBill =>
-        !!value &&
-        typeof value === "object" &&
-        typeof value.id === "string" &&
-        typeof value.creator === "string" &&
-        value.creator.toLowerCase() ===
-          owner.toLowerCase() &&
-        Array.isArray(value.members)
-    );
+    const valid =
+      parsed.filter(
+        (value): value is CloudBill =>
+          isBill(
+            value,
+            owner
+          )
+      );
+
+    // Self-heal old or malformed browser data so
+    // Bill History can never crash on stale records.
+    if (
+      valid.length !==
+      parsed.length
+    ) {
+      localStorage.setItem(
+        storageKey(owner),
+        JSON.stringify(valid)
+      );
+    }
+
+    return valid;
   } catch {
+    localStorage.removeItem(
+      storageKey(owner)
+    );
+
     return [];
   }
 }
@@ -97,15 +184,11 @@ function readLocalBills(
 function sortBills(
   bills: CloudBill[]
 ): CloudBill[] {
-  return [...bills].sort((a, b) => {
-    const left = Date.parse(a.createdAt || "");
-    const right = Date.parse(b.createdAt || "");
-
-    return (
-      (Number.isFinite(right) ? right : 0) -
-      (Number.isFinite(left) ? left : 0)
-    );
-  });
+  return [...bills].sort(
+    (a, b) =>
+      Date.parse(b.createdAt) -
+      Date.parse(a.createdAt)
+  );
 }
 
 function mergeBills(
@@ -130,32 +213,32 @@ function mergeBills(
       merged.get(key);
 
     if (!local) {
-      merged.set(key, cloud);
+      merged.set(
+        key,
+        cloud
+      );
       continue;
     }
 
     const localMembers =
       new Map(
-        local.members.map(member => [
-          member.id.toLowerCase(),
-          member,
-        ])
+        local.members.map(
+          member => [
+            member.id.toLowerCase(),
+            member,
+          ]
+        )
       );
 
     merged.set(key, {
       ...local,
       ...cloud,
-
-      // Preserve a nicer local title if an older
-      // cloud copy did not contain one.
       title:
         cloud.title ||
         local.title,
-
       createdAt:
         cloud.createdAt ||
         local.createdAt,
-
       members:
         cloud.members.map(
           cloudMember => {
@@ -167,12 +250,10 @@ function mergeBills(
             return {
               ...localMember,
               ...cloudMember,
-
               name:
                 cloudMember.name ||
                 localMember?.name ||
                 "Member",
-
               directoryId:
                 cloudMember.directoryId ??
                 localMember?.directoryId ??
@@ -201,17 +282,20 @@ function fingerprint(
     totalRaw: bill.totalRaw,
     txHash: bill.txHash,
     stage: bill.stage,
-    members: bill.members.map(
-      member => ({
-        id: member.id,
-        name: member.name,
-        raw: member.raw,
-        status: member.status,
-        payer: member.payer || "",
-        directoryId:
-          member.directoryId || null,
-      })
-    ),
+    members:
+      bill.members.map(
+        member => ({
+          id: member.id,
+          name: member.name,
+          raw: member.raw,
+          status: member.status,
+          payer:
+            member.payer || "",
+          directoryId:
+            member.directoryId ||
+            null,
+        })
+      ),
   });
 }
 
@@ -223,7 +307,8 @@ async function pushConfirmedBills(
 
   for (const bill of bills) {
     if (
-      bill.stage !== "confirmed" ||
+      bill.stage !==
+        "confirmed" ||
       !/^0x[a-fA-F0-9]{64}$/.test(
         bill.txHash
       )
@@ -234,12 +319,15 @@ async function pushConfirmedBills(
     const mark =
       fingerprint(bill);
 
+    const key =
+      syncedKey(
+        owner,
+        bill.id
+      );
+
     if (
       localStorage.getItem(
-        syncedKey(
-          owner,
-          bill.id
-        )
+        key
       ) === mark
     ) {
       continue;
@@ -255,7 +343,10 @@ async function pushConfirmedBills(
             "Content-Type":
               "application/json",
           },
-          body: JSON.stringify(bill),
+          body:
+            JSON.stringify(
+              bill
+            ),
         }
       );
 
@@ -263,20 +354,20 @@ async function pushConfirmedBills(
       const detail =
         await response
           .json()
-          .catch(() => ({}));
+          .catch(
+            () => ({})
+          );
 
       throw new Error(
-        typeof detail.detail === "string"
+        typeof detail.detail ===
+          "string"
           ? detail.detail
           : `Cloud bill sync HTTP ${response.status}`
       );
     }
 
     localStorage.setItem(
-      syncedKey(
-        owner,
-        bill.id
-      ),
+      key,
       mark
     );
   }
@@ -300,14 +391,36 @@ async function pullCloudBills(
     );
   }
 
-  const data =
+  const data: unknown =
     await response.json();
 
-  const cloudBills:
-    CloudBill[] =
-      Array.isArray(data.bills)
-        ? data.bills
-        : [];
+  const rawBills =
+    (
+      data &&
+      typeof data === "object" &&
+      Array.isArray(
+        (
+          data as {
+            bills?: unknown;
+          }
+        ).bills
+      )
+    )
+      ? (
+          data as {
+            bills: unknown[];
+          }
+        ).bills
+      : [];
+
+  const cloudBills =
+    rawBills.filter(
+      (value): value is CloudBill =>
+        isBill(
+          value,
+          owner
+        )
+    );
 
   const localBills =
     readLocalBills(owner);
@@ -320,13 +433,19 @@ async function pullCloudBills(
 
   const before =
     JSON.stringify(
-      sortBills(localBills)
+      sortBills(
+        localBills
+      )
     );
 
   const after =
-    JSON.stringify(merged);
+    JSON.stringify(
+      merged
+    );
 
-  if (before === after) {
+  if (
+    before === after
+  ) {
     return false;
   }
 
@@ -427,9 +546,6 @@ export default function BillCloudBridge() {
           }
         }
       } catch (error) {
-        // Cloud sync is an enhancement. Never block
-        // the on-chain payment flow if Render is
-        // waking up or temporarily unavailable.
         console.warn(
           "[bill-cloud-sync]",
           error instanceof Error
@@ -453,6 +569,7 @@ export default function BillCloudBridge() {
 
     return () => {
       active = false;
+
       window.clearInterval(
         timer
       );

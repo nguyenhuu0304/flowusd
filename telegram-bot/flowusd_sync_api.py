@@ -17,6 +17,39 @@ from flowusd_api import (
 )
 
 
+# ============================================================
+# Dedicated cloud-bill storage
+#
+# IMPORTANT:
+# Telegram's /api/bills endpoint uses the older `bills` table
+# for Telegram notification sync. Cross-device history must not
+# share that payload_json because the Telegram payload does not
+# contain createdAt/stage/member status.
+# ============================================================
+
+def init_cloud_bills_db() -> None:
+    with db() as con:
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cloud_bills (
+                id TEXT NOT NULL,
+                owner_wallet TEXT NOT NULL,
+                creator TEXT NOT NULL,
+                title TEXT NOT NULL,
+                total_raw TEXT NOT NULL,
+                tx_hash TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY(id, owner_wallet)
+            )
+            """
+        )
+
+
+init_cloud_bills_db()
+
+
 class CloudBillMember(BaseModel):
     id: str
     name: str
@@ -53,6 +86,28 @@ def _payload_from_row(
     ):
         return None
 
+    required = {
+        "id",
+        "creator",
+        "title",
+        "createdAt",
+        "totalRaw",
+        "members",
+        "txHash",
+        "stage",
+    }
+
+    if not required.issubset(
+        payload.keys()
+    ):
+        return None
+
+    if not isinstance(
+        payload.get("members"),
+        list,
+    ):
+        return None
+
     return payload
 
 
@@ -65,7 +120,8 @@ def cloud_bills_health() -> dict[str, Any]:
         "service": (
             "FlowUSD cross-device bill sync"
         ),
-        "version": "1.0.0",
+        "version": "1.1.0",
+        "storage": "cloud_bills",
     }
 
 
@@ -83,7 +139,7 @@ def cloud_bills_by_wallet(
         rows = con.execute(
             """
             SELECT payload_json
-            FROM bills
+            FROM cloud_bills
             WHERE owner_wallet = ?
             ORDER BY created_at DESC
             """,
@@ -155,10 +211,6 @@ def cloud_bill_sync(
             ),
         )
 
-    # The browser cannot invent a bill and write it
-    # to another wallet: the creation transaction
-    # must be successful on the configured Batch
-    # contract.
     verify_creation_transaction(
         tx_hash
     )
@@ -321,7 +373,7 @@ def cloud_bill_sync(
     with db() as con:
         con.execute(
             """
-            INSERT INTO bills(
+            INSERT INTO cloud_bills(
                 id,
                 owner_wallet,
                 creator,
@@ -383,9 +435,6 @@ def cloud_bill_sync(
     }
 
 
-# Running this file directly is useful for local
-# testing. Render should use:
-# uvicorn flowusd_sync_api:app --host 0.0.0.0 --port $PORT
 if __name__ == "__main__":
     import uvicorn
 
