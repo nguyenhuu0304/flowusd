@@ -176,7 +176,8 @@ export default function SplitBillBatchCard() {
 
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
-  const [utilityPanel, setUtilityPanel] = useState<"telegram" | "history" | "advanced" | null>(null);
+  const [showTools, setShowTools] = useState(false);
+  const [utilityPanel, setUtilityPanel] = useState<"telegram" | "history" | "advanced">("telegram");
   // Per-bill verification feedback. Creation progress remains separate.
   const [verifyingBillId, setVerifyingBillId] = useState<string | null>(null);
   const [verificationMessages, setVerificationMessages] = useState<Record<string, string>>({});
@@ -871,65 +872,81 @@ export default function SplitBillBatchCard() {
 
   return (
     <div className="space-y-6">
-      {/* QUICK TOOLS — TOP LEFT */}
+      {/* PRIMARY NAVIGATION */}
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() =>
-            setUtilityPanel(current =>
-              current === "telegram" ? null : "telegram"
-            )
-          }
-          className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-            utilityPanel === "telegram"
+          onClick={() => setShowTools(false)}
+          className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+            !showTools
               ? "border-blue-600 bg-blue-600 text-white"
               : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           }`}
         >
-          {vi ? "Thành viên Telegram" : "Telegram members"}
-          {contacts.length > 0 ? ` · ${contacts.length}` : ""}
+          <Layers3 size={15} />
+          {vi ? "\u0054\u1ea1o bill" : "Create bill"}
         </button>
 
         <button
           type="button"
-          onClick={() =>
-            setUtilityPanel(current =>
-              current === "history" ? null : "history"
-            )
-          }
+          onClick={() => setShowTools(true)}
           className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-            utilityPanel === "history"
+            showTools
               ? "border-blue-600 bg-blue-600 text-white"
               : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           }`}
         >
-          {vi ? "Lịch sử hóa đơn" : "Bill history"} · {bills.length}
-        </button>
-
-        <button
-          type="button"
-          onClick={() =>
-            setUtilityPanel(current =>
-              current === "advanced" ? null : "advanced"
-            )
-          }
-          className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-            utilityPanel === "advanced"
-              ? "border-blue-600 bg-blue-600 text-white"
-              : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-          }`}
-        >
-          {vi ? "Nâng cao" : "Advanced"}
+          {vi ? "C\u00f4ng c\u1ee5" : "Tools"}
         </button>
       </div>
 
-      {utilityPanel === "telegram" && (
+      {showTools && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900">
+          <button
+            type="button"
+            onClick={() => setUtilityPanel("telegram")}
+            className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+              utilityPanel === "telegram"
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
+            }`}
+          >
+            Telegram{contacts.length > 0 ? ` / ${contacts.length}` : ""}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setUtilityPanel("history")}
+            className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+              utilityPanel === "history"
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
+            }`}
+          >
+            {vi ? "L\u1ecbch s\u1eed h\u00f3a \u0111\u01a1n" : "Bill history"} / {bills.length}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setUtilityPanel("advanced")}
+            className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+              utilityPanel === "advanced"
+                ? "border-blue-600 bg-blue-600 text-white"
+                : "border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-800"
+            }`}
+          >
+            {vi ? "N\u00e2ng cao" : "Advanced"}
+          </button>
+        </div>
+      )}
+
+      {showTools && utilityPanel === "telegram" && (
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900 [&>section]:border-0 [&>section]:p-0 [&>section]:shadow-none">
           <TelegramSyncCard />
         </section>
       )}
 
-      {utilityPanel === "history" && (
+      {showTools && utilityPanel === "history" && (
         <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           {!ready && bills.length > 0 && (
             <p
@@ -957,6 +974,8 @@ export default function SplitBillBatchCard() {
         </section>
       )}
 
+      {!showTools && (
+        <>
       {/* CREATE BATCH */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-900">
         <h2 className="flex items-center gap-2 text-xl font-bold">
@@ -1238,7 +1257,10 @@ export default function SplitBillBatchCard() {
         </p>
       </section>
 
-      {utilityPanel === "advanced" && (
+        </>
+      )}
+
+      {showTools && utilityPanel === "advanced" && (
         <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <div>
             <h3 className="font-semibold">
