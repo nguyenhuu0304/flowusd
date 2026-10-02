@@ -167,6 +167,7 @@ export default function SplitBillBatchCard() {
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
   const [people, setPeople] = useState(1);
+  const [aiCommand, setAiCommand] = useState("");
 
   const [names, setNames] = useState<string[]>([]);
   const [chosenIds, setChosenIds] = useState<string[]>([]);
@@ -255,6 +256,193 @@ export default function SplitBillBatchCard() {
       );
     };
   }, [owner]);
+
+  function parseAiCommand() {
+    const input = aiCommand.trim();
+
+    if (!input) {
+      toast.error(
+        vi
+          ? "Nhập lệnh trước, ví dụ: Tạo bill 10 USDC cho A, B, C."
+          : "Enter a command first, for example: Create a 10 USDC bill for A, B, C."
+      );
+      return;
+    }
+
+    const normalized = input
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const amountMatch = normalized.match(
+      /(\d+(?:[.,]\d{1,6})?)\s*(?:usdc|usd)\b/i
+    );
+
+    if (!amountMatch) {
+      toast.error(
+        vi
+          ? "Không tìm thấy số tiền USDC trong lệnh."
+          : "Could not find a USDC amount in the command."
+      );
+      return;
+    }
+
+    const parsedAmount = amountMatch[1].replace(",", ".");
+
+    const explicitPeopleMatch =
+      normalized.match(
+        /(?:chia\s+cho|cho)\s+(\d{1,3})\s+(?:người|nguoi)\b/i
+      ) ||
+      normalized.match(
+        /(?:for|between|among)\s+(\d{1,3})\s+(?:people|persons?)\b/i
+      );
+
+    let namesPart = "";
+
+    const peopleNamesMatch =
+      normalized.match(
+        /(?:\d{1,3}\s+(?:người|nguoi))\s+(.+)$/i
+      ) ||
+      normalized.match(
+        /(?:between|among)\s+(.+)$/i
+      );
+
+    if (peopleNamesMatch?.[1]) {
+      namesPart = peopleNamesMatch[1];
+    } else {
+      const afterAmount = normalized.slice(
+        (amountMatch.index || 0) + amountMatch[0].length
+      );
+
+      const recipientMatch =
+        afterAmount.match(
+          /(?:chia\s+cho|cho)\s+(.+)$/i
+        ) ||
+        afterAmount.match(
+          /(?:for|to)\s+(.+)$/i
+        );
+
+      if (recipientMatch?.[1]) {
+        namesPart = recipientMatch[1];
+      }
+    }
+
+    namesPart = namesPart
+      .replace(
+        /^\d{1,3}\s+(?:người|nguoi|people|persons?)\s*/i,
+        ""
+      )
+      .replace(/[.!?]+$/g, "")
+      .trim();
+
+    const parsedNames = namesPart
+      ? namesPart
+          .split(/\s*(?:,|;|\s+và\s+|\s+and\s+)\s*/i)
+          .map(item => item.trim())
+          .filter(Boolean)
+      : [];
+
+    const explicitPeople = explicitPeopleMatch
+      ? Number(explicitPeopleMatch[1])
+      : 0;
+
+    const parsedPeople =
+      explicitPeople ||
+      parsedNames.length ||
+      1;
+
+    if (
+      !Number.isInteger(parsedPeople) ||
+      parsedPeople < 1 ||
+      parsedPeople > 100
+    ) {
+      toast.error(
+        vi
+          ? "Số người phải từ 1 đến 100."
+          : "People must be between 1 and 100."
+      );
+      return;
+    }
+
+    if (
+      explicitPeople > 0 &&
+      parsedNames.length > 0 &&
+      explicitPeople !== parsedNames.length
+    ) {
+      toast.error(
+        vi
+          ? `Lệnh ghi ${explicitPeople} người nhưng tìm thấy ${parsedNames.length} tên.`
+          : `The command says ${explicitPeople} people but ${parsedNames.length} names were found.`
+      );
+      return;
+    }
+
+    const titleMatch = normalized.match(
+      /(?:tạo|tao|create)\s+(?:bill|hóa đơn|hoa don)\s+(.+?)\s+\d+(?:[.,]\d{1,6})?\s*(?:usdc|usd)\b/i
+    );
+
+    if (titleMatch?.[1]) {
+      const parsedTitle = titleMatch[1]
+        .replace(/^(?:chia|split)\s+/i, "")
+        .trim();
+
+      if (parsedTitle) {
+        setTitle(parsedTitle.slice(0, 80));
+      }
+    }
+
+    setAmount(parsedAmount);
+    setPeople(parsedPeople);
+
+    const nextNames = Array.from(
+      { length: parsedPeople },
+      (_, index) =>
+        parsedNames[index] || ""
+    );
+
+    const nextChosenIds = nextNames.map(name => {
+      const normalizedName =
+        name.trim().toLocaleLowerCase();
+
+      if (!normalizedName) {
+        return "";
+      }
+
+      const matches = contacts.filter(
+        contact =>
+          contact.display_name.toLocaleLowerCase() ===
+            normalizedName ||
+          contact.full_name.toLocaleLowerCase() ===
+            normalizedName ||
+          (contact.username || "")
+            .toLocaleLowerCase() ===
+            normalizedName.replace(/^@/, "")
+      );
+
+      return matches.length === 1
+        ? matches[0].id
+        : "";
+    });
+
+    setNames(nextNames);
+    setChosenIds(nextChosenIds);
+
+    const linkedCount =
+      nextChosenIds.filter(Boolean).length;
+
+    toast.success(
+      vi
+        ? `Đã hiểu lệnh: ${parsedAmount} USDC · ${parsedPeople} người${
+            linkedCount
+              ? ` · ${linkedCount} Telegram`
+              : ""
+          }`
+        : `Command parsed: ${parsedAmount} USDC · ${parsedPeople} people${
+            linkedCount
+              ? ` · ${linkedCount} Telegram`
+              : ""
+          }`
+    );
+  }
 
   function setName(index: number, value: string) {
     const normalized =
@@ -792,6 +980,54 @@ export default function SplitBillBatchCard() {
               : "Configure NEXT_PUBLIC_BATCH_PAYMENT_LINKS_CONTRACT_ADDRESS first."}
           </p>
         )}
+
+        <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/30">
+          <div>
+            <p className="text-sm font-semibold text-blue-900 dark:text-blue-200">
+              ✨ AI Command
+            </p>
+            <p className="mt-1 text-xs text-blue-700 dark:text-blue-300">
+              {vi
+                ? "Gõ lệnh tự nhiên để tự điền bill. Bạn vẫn xác nhận giao dịch bằng Rabby."
+                : "Use natural language to fill the bill. You still confirm the transaction in Rabby."}
+            </p>
+          </div>
+
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input
+              value={aiCommand}
+              onChange={event =>
+                setAiCommand(event.target.value)
+              }
+              onKeyDown={event => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  parseAiCommand();
+                }
+              }}
+              placeholder={
+                vi
+                  ? "Ví dụ: Tạo bill Cafe 10 USDC cho Huy, Nhung, Bao"
+                  : "Example: Create a Cafe bill for 10 USDC for Huy, Nhung, Bao"
+              }
+              className="min-w-0 flex-1 rounded-xl border border-blue-200 bg-white p-3 text-sm text-slate-900 outline-none ring-blue-500 focus:ring-2 dark:border-blue-900 dark:bg-slate-900 dark:text-slate-100"
+            />
+
+            <button
+              type="button"
+              onClick={parseAiCommand}
+              className="rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700"
+            >
+              {vi ? "Hiểu lệnh" : "Parse command"}
+            </button>
+          </div>
+
+          <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">
+            {vi
+              ? "Ví dụ: “Tạo bill 10 USDC cho A, B, C”, “Tạo bill 5 USDC cho Huy”, “Split 30 USDC between Huy, Bao, Nhung”."
+              : "Examples: “Create a 10 USDC bill for A, B, C”, “Create a 5 USDC bill for Huy”, “Split 30 USDC between Huy, Bao, Nhung”."}
+          </p>
+        </div>
 
         <form
           onSubmit={event =>
