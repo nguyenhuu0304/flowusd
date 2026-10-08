@@ -690,6 +690,26 @@ def init_db() -> None:
 
             );
 
+            CREATE TABLE IF NOT EXISTS creator_notifications (
+
+                owner_wallet TEXT NOT NULL,
+
+                bill_id TEXT NOT NULL,
+
+                telegram_chat_id INTEGER NOT NULL,
+
+                sent_at INTEGER NOT NULL,
+
+                PRIMARY KEY(
+
+                    owner_wallet,
+
+                    bill_id
+
+                )
+
+            );
+
             """
 
         )
@@ -3158,6 +3178,183 @@ def directory_update(
 
 # ============================================================
 
+# Bill-creator notification
+
+# ============================================================
+
+
+
+def notify_creator_bill_created(
+
+    con: sqlite3.Connection,
+
+    wallet: str,
+
+    bill: BillSyncRequest,
+
+) -> bool:
+
+    """
+    Notify the Telegram account linked through /connect
+    when its wallet creates and syncs a confirmed bill.
+
+    Sent only once per bill.
+    """
+
+    if not TELEGRAM_BOT_TOKEN:
+
+        print(
+            "Creator notification skipped: TELEGRAM_BOT_TOKEN is not configured.",
+            flush=True,
+        )
+
+        return False
+
+
+    existing = con.execute(
+
+        """
+        SELECT 1
+        FROM creator_notifications
+        WHERE owner_wallet = ?
+          AND bill_id = ?
+        """,
+
+        (
+            wallet,
+            bill.id,
+        ),
+
+    ).fetchone()
+
+
+    if existing:
+
+        return False
+
+
+    owner_row = con.execute(
+
+        """
+        SELECT
+            chat_id,
+            username
+        FROM owners
+        WHERE wallet = ?
+        """,
+
+        (wallet,),
+
+    ).fetchone()
+
+
+    if not owner_row:
+
+        print(
+            (
+                "Creator notification skipped: "
+                f"wallet {wallet} has no /connect mapping."
+            ),
+            flush=True,
+        )
+
+        return False
+
+
+    chat_id = int(
+        owner_row["chat_id"]
+    )
+
+    total_text = raw_usdc_to_text(
+        bill.totalRaw
+    )
+
+    member_count = len(
+        bill.members
+    )
+
+
+    message = (
+
+        "? FlowUSD bill created\n\n"
+
+        f"Bill: {bill.title or 'Split bill'}\n"
+
+        f"Total: {total_text} USDC\n"
+
+        f"Members: {member_count}\n"
+
+        f"Status: 0/{member_count} paid\n\n"
+
+        "Confirmed on Arc Testnet.\n"
+
+        f"TX: {bill.txHash}"
+
+    )
+
+
+    try:
+
+        send_telegram(
+            chat_id,
+            message,
+        )
+
+    except Exception as exc:
+
+        print(
+            (
+                "Creator notification send failed:"
+                f" bill={bill.id}"
+                f" chat={chat_id}"
+                f" error={repr(exc)}"
+            ),
+            flush=True,
+        )
+
+        return False
+
+
+    con.execute(
+
+        """
+        INSERT INTO creator_notifications(
+            owner_wallet,
+            bill_id,
+            telegram_chat_id,
+            sent_at
+        )
+        VALUES (?, ?, ?, ?)
+        """,
+
+        (
+            wallet,
+            bill.id,
+            chat_id,
+            now_ts(),
+        ),
+
+    )
+
+
+    print(
+        (
+            "Creator notification sent:"
+            f" bill={bill.title}"
+            f" wallet={wallet}"
+            f" chat={chat_id}"
+        ),
+        flush=True,
+    )
+
+    return True
+
+
+
+
+
+# ============================================================
+
 # Payment-due notification
 
 # ============================================================
@@ -3886,6 +4083,22 @@ def sync_bill(
 
 
 
+        creator_notified = (
+
+            notify_creator_bill_created(
+
+                con,
+
+                wallet,
+
+                payload,
+
+            )
+
+        )
+
+
+
         due_sent, due_skipped = (
 
             notify_payment_due(
@@ -3905,6 +4118,8 @@ def sync_bill(
     return {
 
         "ok": True,
+
+        "creatorNotificationSent": creator_notified,
 
         "billId": payload.id,
 
