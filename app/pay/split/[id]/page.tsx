@@ -216,6 +216,39 @@ export default function PaySplitPage() {
   }
 
 
+  const errorText = (value: unknown) => {
+    if (value instanceof Error) {
+      return value.message;
+    }
+
+    if (
+      value &&
+      typeof value === "object"
+    ) {
+      const candidate =
+        value as {
+          message?: unknown;
+          code?: unknown;
+        };
+
+      if (
+        typeof candidate.message ===
+        "string"
+      ) {
+        return candidate.message;
+      }
+
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return "Wallet request failed.";
+      }
+    }
+
+    return String(value);
+  };
+
+
   const reload =
     useCallback(
       async () => {
@@ -249,15 +282,38 @@ export default function PaySplitPage() {
 
           if (!provider) {
 
-            throw new Error(
+            setData(null);
+
+            setError(
               "Open this payment link in Rabby, MetaMask, or another wallet DApp browser."
             );
+
+            return;
           }
 
 
-          await ensureArc(
-            provider
-          );
+          const chainId =
+            await provider.request({
+              method: "eth_chainId",
+              params: [],
+            });
+
+
+          if (
+            String(chainId)
+              .toLowerCase() !==
+            ARC_TESTNET_CHAIN_ID_HEX
+              .toLowerCase()
+          ) {
+
+            setData(null);
+
+            setError(
+              "Connect your wallet and switch to Arc Testnet to load this payment request."
+            );
+
+            return;
+          }
 
 
           const link =
@@ -288,9 +344,7 @@ export default function PaySplitPage() {
           setData(null);
 
           setError(
-            e instanceof Error
-              ? e.message
-              : String(e)
+            errorText(e)
           );
 
         } finally {
@@ -385,9 +439,7 @@ export default function PaySplitPage() {
     } catch (e) {
 
       toast.error(
-        e instanceof Error
-          ? e.message
-          : String(e)
+        errorText(e)
       );
     }
   }
@@ -573,9 +625,7 @@ export default function PaySplitPage() {
     } catch (e) {
 
       toast.error(
-        e instanceof Error
-          ? e.message
-          : String(e)
+        errorText(e)
       );
 
     } finally {

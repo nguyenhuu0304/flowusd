@@ -3529,6 +3529,8 @@ def notify_payment_due(
 
 
 
+        chain = None
+
         try:
 
             chain = read_batch_link(
@@ -3539,87 +3541,123 @@ def notify_payment_due(
 
         except Exception as exc:
 
-            print(
+            detail = str(
+                getattr(
+                    exc,
+                    "detail",
+                    exc,
+                )
+            )
 
-                (
+            rpc_403 = (
+                isinstance(
+                    exc,
+                    HTTPException,
+                )
+                and exc.status_code == 503
+                and (
+                    "403" in detail
+                    or "Forbidden" in detail
+                )
+            )
 
-                    "Due notification chain check failed:"
+            if rpc_403:
 
-                    f" bill={bill.id}"
+                print(
 
-                    f" link={link_id}"
+                    (
 
-                    f" error={repr(exc)}"
+                        "Due notification using RPC 403 fallback:"
 
-                ),
+                        f" bill={bill.id}"
 
-                flush=True,
+                        f" link={link_id}"
+
+                    ),
+
+                    flush=True,
+
+                )
+
+            else:
+
+                print(
+
+                    (
+
+                        "Due notification chain check failed:"
+
+                        f" bill={bill.id}"
+
+                        f" link={link_id}"
+
+                        f" error={repr(exc)}"
+
+                    ),
+
+                    flush=True,
+
+                )
+
+                skipped += 1
+                continue
+
+
+
+        # When Arc RPC is available, keep strict on-chain validation.
+        # If the public RPC blocks server-side access with HTTP 403,
+        # use the authenticated bill metadata that the web client
+        # submitted only after wallet confirmation.
+
+        if chain is not None:
+
+            if chain["paid"]:
+
+                skipped += 1
+                continue
+
+
+
+            expected_amount = int(
+
+                member.raw
 
             )
 
 
 
-            skipped += 1
+            if (
 
-            continue
+                chain["creator"]
 
+                != wallet.lower()
 
+                or chain["amount_raw"]
 
-        # Never send a new "please pay" message for a member
+                != expected_amount
 
-        # who has already paid before this sync.
+            ):
 
-        if chain["paid"]:
+                print(
 
-            skipped += 1
+                    (
 
-            continue
+                        "Due notification skipped due to "
 
+                        "on-chain owner/amount mismatch:"
 
+                        f" bill={bill.id}"
 
-        expected_amount = int(
+                        f" link={link_id}"
 
-            member.raw
+                    ),
 
-        )
+                    flush=True,
 
+                )
 
-
-        if (
-
-            chain["creator"]
-
-            != wallet.lower()
-
-            or chain["amount_raw"]
-
-            != expected_amount
-
-        ):
-
-            print(
-
-                (
-
-                    "Due notification skipped due to "
-
-                    "on-chain owner/amount mismatch:"
-
-                    f" bill={bill.id}"
-
-                    f" link={link_id}"
-
-                ),
-
-                flush=True,
-
-            )
-
-
-
-            skipped += 1
-
-            continue
+                skipped += 1
+                continue
 
 
 
