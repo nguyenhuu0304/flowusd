@@ -3276,7 +3276,7 @@ def notify_creator_bill_created(
 
     message = (
 
-        "? FlowUSD bill created\n\n"
+        "\u2705 FlowUSD bill created\n\n"
 
         f"Bill: {bill.title or 'Split bill'}\n"
 
@@ -3909,15 +3909,71 @@ def sync_bill(
 
 
 
-    receipt = (
+    # Production/testnet compatibility:
+    # Arc public RPC may reject server-side requests with HTTP 403.
+    # The web client already waits for the wallet transaction receipt
+    # before syncing a confirmed bill to this endpoint.
+    #
+    # Keep strict verification whenever RPC is available. Only fall
+    # back to authenticated metadata sync for the specific RPC 403 case.
+    receipt: dict[str, Any] = {}
+    rpc_verification = "verified"
 
-        verify_creation_transaction(
+    try:
 
-            tx_hash
+        receipt = (
+
+            verify_creation_transaction(
+
+                tx_hash
+
+            )
 
         )
 
-    )
+    except HTTPException as exc:
+
+        detail = str(
+
+            exc.detail
+
+        )
+
+        if (
+
+            exc.status_code == 503
+
+            and (
+
+                "403" in detail
+
+                or "Forbidden" in detail
+
+            )
+
+        ):
+
+            rpc_verification = "skipped_rpc_403"
+
+            print(
+
+                (
+
+                    "Arc RPC server verification skipped "
+
+                    "because the public RPC returned 403. "
+
+                    f"wallet={wallet} tx={tx_hash}"
+
+                ),
+
+                flush=True,
+
+            )
+
+        else:
+
+            raise
 
 
 
@@ -4130,6 +4186,8 @@ def sync_bill(
             "blockNumber"
 
         ),
+
+        "rpcVerification": rpc_verification,
 
         "members": len(
 
